@@ -9,6 +9,7 @@ from models.message import (
     MessageResponse,
     message_doc_to_response,
 )
+from services.ai import analyze_message
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -18,11 +19,20 @@ async def create_message(payload: MessageCreate):
     now = datetime.now(timezone.utc)
     doc = {
         **payload.model_dump(),
+        "state": "active",
         "created_at": now,
         "updated_at": now,
     }
     result = await messages_collection.insert_one(doc)
     doc["_id"] = result.inserted_id
+
+    ai_analysis = await analyze_message(payload.content)
+    await messages_collection.update_one(
+        {"_id": result.inserted_id},
+        {"$set": {"ai_analysis": ai_analysis}},
+    )
+    doc["ai_analysis"] = ai_analysis
+
     return message_doc_to_response(doc)
 
 

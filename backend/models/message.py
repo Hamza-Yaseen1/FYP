@@ -1,7 +1,18 @@
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional
-from bson import ObjectId
+
+
+class AIAnalysis(BaseModel):
+    priority: str = "pending"
+    confidence: float = 0.0
+    summary: Optional[str] = None
+    recommended_actions: list[str] = []
+    tasks_extracted: list[str] = []
+    deadlines: list[str] = []
+    provider: str = "unknown"
+    analyzed_at: Optional[datetime] = None
+    status: str = "pending"
 
 
 class MessageCreate(BaseModel):
@@ -16,6 +27,7 @@ class MessageUpdate(BaseModel):
     content: Optional[str] = None
     source: Optional[str] = None
     status: Optional[str] = None
+    state: Optional[str] = None
 
 
 class MessageResponse(BaseModel):
@@ -24,17 +36,25 @@ class MessageResponse(BaseModel):
     content: str
     source: str
     status: str
+    state: str
+    ai_analysis: Optional[AIAnalysis] = None
     created_at: datetime
     updated_at: datetime
 
 
 def message_doc_to_response(doc: dict) -> dict:
+    ai_analysis = doc.get("ai_analysis")
+    if ai_analysis:
+        ai_analysis = AIAnalysis(**ai_analysis)
+
     return {
         "id": str(doc["_id"]),
         "sender": doc["sender"],
         "content": doc["content"],
         "source": doc["source"],
         "status": doc["status"],
+        "state": doc.get("state", "active"),
+        "ai_analysis": ai_analysis,
         "created_at": doc["created_at"],
         "updated_at": doc["updated_at"],
     }

@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from database import messages_collection
 from models.message import message_doc_to_response
+from services.ai import analyze_message
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -26,6 +27,7 @@ async def whatsapp_webhook(payload: WhatsAppPayload):
         "content": payload.message,
         "source": "whatsapp",
         "status": "unread",
+        "state": "active",
         "created_at": created_at,
         "updated_at": datetime.now(timezone.utc),
     }
@@ -33,8 +35,16 @@ async def whatsapp_webhook(payload: WhatsAppPayload):
     result = await messages_collection.insert_one(doc)
     doc["_id"] = result.inserted_id
 
+    # Trigger AI analysis synchronously
+    ai_analysis = await analyze_message(payload.message)
+    await messages_collection.update_one(
+        {"_id": result.inserted_id},
+        {"$set": {"ai_analysis": ai_analysis}},
+    )
+    doc["ai_analysis"] = ai_analysis
+
     return {
         "success": True,
-        "message": "WhatsApp message received and stored",
+        "message": "WhatsApp message received, analyzed, and stored",
         "data": message_doc_to_response(doc),
     }
