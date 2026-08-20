@@ -2,6 +2,8 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
 
+from models.task import ExtractedTask
+
 
 class AIAnalysis(BaseModel):
     priority: str = "pending"
@@ -9,7 +11,7 @@ class AIAnalysis(BaseModel):
     explanation: Optional[str] = None
     summary: Optional[str] = None
     recommended_actions: list[str] = []
-    tasks_extracted: list[str] = []
+    tasks_extracted: list[ExtractedTask] = []
     deadlines: list[str] = []
     provider: str = "unknown"
     analyzed_at: Optional[datetime] = None

@@ -94,7 +94,7 @@ export default function PriorityBadge({
   return (
     <div className="flex items-center gap-1">
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+        <DropdownMenuTrigger>
           <Badge
             variant="outline"
             className={`text-[10px] uppercase cursor-pointer hover:opacity-80 ${config.color}`}

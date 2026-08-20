@@ -8,7 +8,7 @@ class AIAnalysisResult(BaseModel):
     explanation: str | None = None  # 1-2 sentences explaining priority
     summary: str | None = None
     recommended_actions: list[str] = []
-    tasks_extracted: list[str] = []
+    tasks_extracted: list[dict] = []
     deadlines: list[str] = []
 
 

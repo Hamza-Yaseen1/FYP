@@ -1,20 +1,19 @@
 <!--
 Sync Impact Report
 ==================
-Version change: N/A → 1.0.0 (initial creation)
-Modified principles: N/A (new document)
+Version change: 1.0.0 → 1.1.0 (MINOR: new feature guidance sections added)
+Modified principles:
+  - III. AI is Assistive, Not Magical (materially expanded with task/deadline rules)
+  - Quality Bar (expanded with task extraction + deadline detection targets)
+  - Compliance Checklist (expanded with 3 new checks)
 Added sections:
-  - Core Mission
-  - Development Principles (7 principles)
-  - Technical Principles
-  - Quality Bar
-  - Decision Guidelines
-  - Governance
+  - AI Feature Guidance: Task Extraction (purpose, rules, examples, what AI must not do)
+  - AI Feature Guidance: Urgency & Deadline Detection (purpose, rules, examples, what AI must not do)
 Removed sections: N/A
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ verified (Constitution Check section present)
-  - .specify/templates/spec-template.md ✅ verified (requirements format compatible)
-  - .specify/templates/tasks-template.md ✅ verified (task structure compatible)
+  - .specify/templates/plan-template.md ✅ no changes needed (Constitution Check section generic)
+  - .specify/templates/spec-template.md ✅ no changes needed (requirements format compatible)
+  - .specify/templates/tasks-template.md ✅ no changes needed (task structure compatible)
 Follow-up TODOs: None
 -->
 
@@ -103,6 +102,154 @@ Gracefully degrade features rather than failing entirely.
 **Rationale**: LLM APIs have rate limits and downtime. The system must
 remain useful even when AI components are unavailable.
 
+## AI Feature Guidance
+
+This section provides focused rules for the two AI features being built
+on Days 11-12: Task Extraction and Urgency + Deadline Detection.
+These rules extend Principle III (AI is Assistive, Not Magical) and
+the existing AI Behavior Rules in SPEC.md.
+
+### Task Extraction
+
+#### Purpose
+
+Extract clear, actionable tasks from incoming messages so users can see
+what they need to do without reading every message fully. Tasks are
+stored in the `tasks` collection and displayed on the Tasks page.
+
+#### Input → Output Contract
+
+A message enters the system. The AI MUST return:
+
+```json
+{
+  "tasks_extracted": [
+    {
+      "description": "Send FYP slides",
+      "deadline": "Tonight",
+      "priority_indicator": "urgent",
+      "requires_action": true
+    }
+  ],
+  "task_count": 1
+}
+```
+
+#### What the AI MUST Do
+
+1. **Only extract tasks explicitly mentioned in the message.** A task
+   exists when the message contains a clear verb directed at the
+   recipient (send, review, submit, prepare, confirm, call, etc.).
+2. **Preserve the original deadline wording exactly as stated.** If the
+   message says "tonight", the deadline field MUST be `"Tonight"` — not
+   a converted date, not null, not an invented timestamp.
+3. **Return an empty array when no actionable tasks exist.** Messages
+   that are purely informational, social, or automated MUST produce
+   zero tasks — no false positives.
+4. **Attribute the task to the recipient, not the sender.** "I'll send
+   you the files tomorrow" is NOT a task for the recipient.
+5. **Combine related sub-tasks into one task** when they form a single
+   coherent action (e.g., "review slides and send feedback" → one task).
+
+#### What the AI MUST NEVER Do
+
+- **NEVER invent a task that is not in the message.** If the message
+  says "meeting tomorrow", that is context — not a task — unless it
+  explicitly asks the recipient to do something.
+- **NEVER invent deadlines.** If no deadline is mentioned, the
+  `deadline` field MUST be `null`. Do not infer deadlines from context
+  (e.g., "meeting tomorrow" does not mean the task is due tomorrow).
+- **NEVER assume urgency without evidence.** The `priority_indicator`
+  field MUST only contain words actually present in the message or
+  strong semantic equivalents. Do not add "urgent" because the message
+  is short or direct.
+- **NEVER auto-create tasks in the database.** Tasks are advisory.
+  The system stores them for user review; the user decides what to act on.
+
+#### Quality Bar
+
+- **Accuracy**: ≥ 85% of messages containing clear action requests MUST
+  produce correct task extraction (tested against a labeled set of 50
+  messages).
+- **False positive rate**: ≤ 10% — messages without actionable content
+  MUST NOT produce tasks.
+- **Latency**: Task extraction MUST complete within the same LLM call
+  as priority classification (no additional API round-trip).
+- **Graceful fallback**: If extraction fails, the message is stored
+  with `tasks_extracted: []` and `status: "pending"`. No error is shown
+  to the user; the message still appears on the dashboard.
+
+### Urgency & Deadline Detection
+
+#### Purpose
+
+Understand relative time expressions in messages and convert them into
+useful deadline information when possible. This supports both task
+extraction (deadline field) and priority classification (Urgent vs
+Important vs Normal).
+
+#### Supported Time Expressions
+
+The AI MUST recognize and correctly classify these relative expressions:
+
+| Expression | Classification | Example |
+|---|---|---|
+| right now, ASAP, immediately | Urgent (hours) | "Submit the form right now" |
+| today, tonight | Urgent (today) | "Send me the slides tonight" |
+| tomorrow | Important (1 day) | "Review this by tomorrow" |
+| this week, by Friday | Important (days) | "Finish the report this week" |
+| next week, next month | Normal (weeks) | "Prepare the slides next week" |
+| before the meeting, before Monday | Depends on meeting date | "Send docs before the meeting" |
+| no deadline mentioned | Normal (no urgency) | "Can you check this?" |
+
+#### What the AI MUST Do
+
+1. **Detect relative time expressions** and classify urgency based on
+   the expression, not invented context.
+2. **Preserve the original expression as the deadline value** when an
+   exact date/time cannot be reliably determined from context. If the
+   message says "tonight", the deadline is `"Tonight"` — not a computed
+   datetime.
+3. **Convert to an exact date ONLY when the expression is unambiguous
+   and the current date context is available.** For example, "tomorrow"
+   can be converted if today's date is known. If not, keep `"tomorrow"`.
+4. **Use urgency signals to inform priority classification.** Messages
+   with "ASAP" or "right now" MUST be classified as Urgent. Messages
+   with "this week" SHOULD be classified as Important.
+5. **Handle ambiguous references gracefully.** "Before the meeting" —
+   if no meeting date is known, keep the original expression. Do not
+   guess.
+
+#### What the AI MUST NEVER Do
+
+- **NEVER invent a specific date or time** that is not stated or
+  unambiguously derivable from the message. "Tonight" MUST NOT become
+  `"2026-08-19T23:59:00"`.
+- **NEVER assume a timezone.** Keep deadline expressions in their
+  original form unless the user's timezone is explicitly configured.
+- **NEVER override user-stated deadlines.** If a user says "by Friday"
+  and the AI thinks it should be "by Thursday" based on context, the
+  AI MUST use "Friday".
+- **NEVER infer urgency from message length, tone, or sender alone.**
+  A short message is not automatically urgent. A message from a boss is
+  not automatically urgent without a time-related expression.
+- **NEVER fabricate deadlines for informational messages.** "Just
+  FYI — the server will be down tomorrow" has no deadline for the
+  recipient. `deadline` MUST be `null`.
+
+#### Quality Bar
+
+- **Accuracy**: ≥ 90% of relative time expressions MUST be correctly
+  classified (tested against a labeled set of 30 messages with varied
+  time expressions).
+- **No hallucinated dates**: 0 tolerance — any invented date in a
+  deadline field is a critical failure.
+- **Latency**: Deadline detection is part of the single LLM analysis
+  call. No additional latency budget.
+- **Graceful fallback**: If deadline detection fails, `deadlines: []`
+  is returned and priority defaults to `"normal"`. The user sees the
+  message without deadline info; nothing breaks.
+
 ## Technical Principles
 
 ### Frontend
@@ -161,6 +308,14 @@ A feature is DONE when:
 - API responses return in under 500ms (excluding LLM calls)
 - LLM-powered features show a loading state; never block the UI
 
+### Task Extraction & Deadline Detection Targets
+
+- Task extraction accuracy ≥ 85% on labeled test set
+- False positive rate ≤ 10% (no tasks from non-actionable messages)
+- Deadline hallucination rate = 0% (no invented dates)
+- Relative time expression accuracy ≥ 90%
+- Single LLM call for priority + tasks + deadlines (no extra latency)
+
 ## Decision Guidelines
 
 When facing uncertainty, use these tiebreakers in order:
@@ -212,5 +367,8 @@ Before merging any feature branch, verify:
 - [ ] No secrets or sensitive data in code or logs
 - [ ] Code is clean and follows project conventions
 - [ ] Core functionality works without AI availability
+- [ ] Task extraction produces no false positives (no tasks from non-actionable messages)
+- [ ] No invented deadlines — all deadline values come from the message or are null
+- [ ] Relative time expressions preserved as-is when exact conversion is unreliable
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-19
+**Version**: 1.1.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-20

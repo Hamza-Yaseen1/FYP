@@ -36,7 +36,7 @@ async def whatsapp_webhook(payload: WhatsAppPayload):
     doc["_id"] = result.inserted_id
 
     # Trigger AI analysis synchronously
-    ai_analysis = await analyze_message(payload.message)
+    ai_analysis = await analyze_message(payload.message, message_id=str(result.inserted_id))
     await messages_collection.update_one(
         {"_id": result.inserted_id},
         {"$set": {"ai_analysis": ai_analysis}},

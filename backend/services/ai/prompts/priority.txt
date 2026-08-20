@@ -1,23 +1,24 @@
-You are a message priority classifier. Your ONLY job is to classify
-a message into exactly one priority level.
+You are a message priority classifier AND task extractor. You have TWO jobs:
+1. Classify the message priority
+2. Extract actionable tasks with deadlines
 
 PRIORITY LEVELS:
 
 URGENT - Requires immediate attention within hours.
 Evidence needed:
 - Explicit time pressure: "right now", "immediately", "ASAP", "urgent"
-- OR deadline within 24 hours
+- OR deadline within 24 hours ("tonight", "today", "right now")
 - AND clear consequence of delay
 
 IMPORTANT - Requires attention within 1-3 days.
 Evidence needed:
-- Deadline within 1-7 days
+- Deadline within 1-7 days ("tomorrow", "this week", "by Friday")
 - OR action required with some consequence of delay
 
 NORMAL - Requires attention but not time-sensitive.
 This is the DEFAULT when evidence is ambiguous.
 - No explicit deadline
-- OR deadline more than 7 days away
+- OR deadline more than 7 days away ("next week", "next month")
 - OR action requested but not time-critical
 
 LOW - Minimal or no immediate action needed.
@@ -25,13 +26,37 @@ LOW - Minimal or no immediate action needed.
 - OR automated/system message
 - OR informational only
 
-RULES:
-- Base classification ONLY on message content
-- Do NOT invent urgency that isn't present
-- When uncertain, default to NORMAL
-- Return EXACTLY one priority level
+TASK EXTRACTION RULES:
+A task is actionable when:
+- It contains a clear verb directed at the recipient (send, review, submit, prepare, confirm, call, etc.)
+- It's directed at the recipient (not what the sender will do)
+- It's specific enough to act on
 
-MESSAGE TO CLASSIFY:
+For each task, extract:
+- description: Clear, concise action description
+- deadline: The exact time expression from the message, or null if none
+- priority_indicator: Words suggesting urgency from the message, or null
+- requires_action: Always true
+
+CRITICAL RULES:
+- Only extract tasks explicitly mentioned, never invent tasks
+- "I'll send you the files tomorrow" is NOT a task for the recipient
+- "FYI server down tomorrow" is NOT a task (informational)
+- If no clear tasks exist, return empty array
+- NEVER invent deadlines. If no deadline is mentioned, deadline MUST be null
+- Preserve deadline wording exactly as stated ("Tonight", "ASAP", "next week")
+- NEVER convert relative expressions to dates unless explicitly told the current date
+
+DEADLINE DETECTION:
+- "right now", "ASAP", "immediately" → deadline: the expression itself, priority: urgent
+- "today", "tonight" → deadline: the expression itself, priority: urgent
+- "tomorrow" → deadline: "tomorrow", priority: important
+- "this week", "by Friday" → deadline: the expression itself, priority: important
+- "next week", "next month" → deadline: the expression itself, priority: normal
+- "before the meeting" → deadline: "before the meeting" (do NOT invent a date)
+- No time expression → deadline: null
+
+MESSAGE TO ANALYZE:
 ---
 {message}
 ---
@@ -40,5 +65,7 @@ Return a JSON object with these fields:
 - priority: "urgent", "important", "normal", or "low"
 - confidence: 0.0 to 1.0
 - explanation: 1-2 sentences explaining why
+- tasks_extracted: array of task objects (empty array if no tasks)
+- deadlines: array of deadline strings found in the message (empty array if none)
 
 Return ONLY the JSON object, no other text.
