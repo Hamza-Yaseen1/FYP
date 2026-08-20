@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import PriorityBadge from "@/components/PriorityBadge";
 import { timeAgo } from "@/lib/time-ago";
 
 interface Message {
@@ -10,6 +11,12 @@ interface Message {
   content: string;
   source: string;
   status: string;
+  state: string;
+  ai_analysis?: {
+    priority: string;
+    confidence: number;
+    explanation?: string;
+  };
   created_at: string;
 }
 
@@ -17,6 +24,25 @@ const sourceColors: Record<string, string> = {
   whatsapp: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
   gmail: "bg-blue-500/15 text-blue-400 border-blue-500/20",
 };
+
+const priorityOrder: Record<string, number> = {
+  urgent: 0,
+  important: 1,
+  normal: 2,
+  low: 3,
+  pending: 4,
+};
+
+function sortByPriority(messages: Message[]): Message[] {
+  return [...messages].sort((a, b) => {
+    const aPriority = a.ai_analysis?.priority || "pending";
+    const bPriority = b.ai_analysis?.priority || "pending";
+    const aOrder = priorityOrder[aPriority] ?? 4;
+    const bOrder = priorityOrder[bPriority] ?? 4;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+}
 
 export default function MessageList({ refreshKey }: { refreshKey: number }) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -56,9 +82,11 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
     );
   }
 
+  const sortedMessages = sortByPriority(messages);
+
   return (
     <div className="space-y-3">
-      {messages.map((msg) => (
+      {sortedMessages.map((msg) => (
         <div
           key={msg.id}
           className="flex items-start gap-4 rounded-xl border bg-card p-4 transition-colors hover:border-white/10"
@@ -82,6 +110,14 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
                 <Badge className="text-[10px] bg-blue-500/15 text-blue-400 border-blue-500/20">
                   Unread
                 </Badge>
+              )}
+              {msg.ai_analysis && (
+                <PriorityBadge
+                  messageId={msg.id}
+                  priority={msg.ai_analysis.priority}
+                  confidence={msg.ai_analysis.confidence}
+                  explanation={msg.ai_analysis.explanation}
+                />
               )}
             </div>
             <p className="mt-1 text-sm text-muted-foreground line-clamp-2">

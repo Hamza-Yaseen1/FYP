@@ -85,3 +85,36 @@ async def delete_message(message_id: str):
     result = await messages_collection.delete_one({"_id": ObjectId(message_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Message not found")
+
+
+VALID_PRIORITIES = ["urgent", "important", "normal", "low"]
+
+
+@router.put("/{message_id}/priority", response_model=MessageResponse)
+async def override_priority(message_id: str, priority: str):
+    if not ObjectId.is_valid(message_id):
+        raise HTTPException(status_code=400, detail="Invalid message ID")
+
+    if priority not in VALID_PRIORITIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid priority. Must be one of: {VALID_PRIORITIES}",
+        )
+
+    now = datetime.now(timezone.utc)
+    result = await messages_collection.find_one_and_update(
+        {"_id": ObjectId(message_id)},
+        {
+            "$set": {
+                "ai_analysis.priority": priority,
+                "ai_analysis.confidence": 1.0,
+                "ai_analysis.explanation": "User override",
+                "updated_at": now,
+            }
+        },
+        return_document=True,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    return message_doc_to_response(result)

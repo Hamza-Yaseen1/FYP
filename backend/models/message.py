@@ -6,6 +6,7 @@ from typing import Optional
 class AIAnalysis(BaseModel):
     priority: str = "pending"
     confidence: float = 0.0
+    explanation: Optional[str] = None
     summary: Optional[str] = None
     recommended_actions: list[str] = []
     tasks_extracted: list[str] = []

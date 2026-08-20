@@ -1,13 +1,13 @@
 from datetime import datetime, timezone
 import logging
 from .providers.base import BaseLLMProvider, AIAnalysisResult
-from .providers.openai import OpenAIProvider
+from .providers.groq import GroqProvider
 
 logger = logging.getLogger(__name__)
 
 
 def get_provider() -> BaseLLMProvider:
-    return OpenAIProvider()
+    return GroqProvider()
 
 
 async def analyze_message(message_content: str) -> dict:
@@ -18,24 +18,26 @@ async def analyze_message(message_content: str) -> dict:
         return {
             "priority": result.priority,
             "confidence": result.confidence,
+            "explanation": result.explanation,
             "summary": result.summary,
             "recommended_actions": result.recommended_actions,
             "tasks_extracted": result.tasks_extracted,
             "deadlines": result.deadlines,
-            "provider": "openai",
+            "provider": "groq",
             "analyzed_at": datetime.now(timezone.utc),
             "status": "completed",
         }
     except Exception as e:
         logger.error(f"AI analysis failed: {e}")
         return {
-            "priority": "pending",
+            "priority": "normal",
             "confidence": 0.0,
+            "explanation": "Analysis failed, defaulting to normal priority",
             "summary": None,
             "recommended_actions": [],
             "tasks_extracted": [],
             "deadlines": [],
-            "provider": "openai",
+            "provider": "groq",
             "analyzed_at": None,
-            "status": "failed",
+            "status": "pending",
         }

@@ -1,4 +1,9 @@
-You are a message priority classifier. Your ONLY job is to classify
+import os
+import json
+from groq import AsyncGroq
+from .base import BaseLLMProvider, AIAnalysisResult
+
+PRIORITY_PROMPT = """You are a message priority classifier. Your ONLY job is to classify
 a message into exactly one priority level.
 
 PRIORITY LEVELS:
@@ -41,4 +46,23 @@ Return a JSON object with these fields:
 - confidence: 0.0 to 1.0
 - explanation: 1-2 sentences explaining why
 
-Return ONLY the JSON object, no other text.
+Return ONLY the JSON object, no other text."""
+
+
+class GroqProvider(BaseLLMProvider):
+    def __init__(self):
+        self.client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+        self.model = "qwen/qwen3.6-27b"
+
+    async def analyze(self, message: str) -> AIAnalysisResult:
+        prompt = PRIORITY_PROMPT.format(message=message)
+
+        response = await self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.3,
+        )
+
+        result = json.loads(response.choices[0].message.content)
+        return AIAnalysisResult(**result)
