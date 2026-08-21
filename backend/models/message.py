@@ -10,9 +10,12 @@ class AIAnalysis(BaseModel):
     confidence: float = 0.0
     explanation: Optional[str] = None
     summary: Optional[str] = None
+    recommended_action: str = ""
     recommended_actions: list[str] = []
     tasks_extracted: list[ExtractedTask] = []
     deadlines: list[str] = []
+    needs_attention: bool = False
+    attention_reason: str = ""
     provider: str = "unknown"
     analyzed_at: Optional[datetime] = None
     status: str = "pending"

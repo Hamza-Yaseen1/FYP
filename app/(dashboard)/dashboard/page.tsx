@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import HealthBadge from "@/components/HealthBadge";
 import MessageList from "@/components/MessageList";
+import NeedsAttentionSection from "@/components/NeedsAttentionSection";
 import SimulateMessage from "@/components/SimulateMessage";
 
 interface Task {
@@ -131,6 +132,9 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Flagged messages */}
+      <NeedsAttentionSection refreshKey={refreshKey} />
 
       {/* Recent messages */}
       <div>

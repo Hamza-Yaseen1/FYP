@@ -17,6 +17,10 @@ interface Message {
     confidence: number;
     explanation?: string;
     summary?: string;
+    recommended_action?: string;
+    deadlines?: string[];
+    needs_attention?: boolean;
+    attention_reason?: string;
     tasks_extracted?: Array<{
       description: string;
       deadline: string | null;
@@ -159,6 +163,11 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
               {msg.ai_analysis?.summary && (
                 <p className="mt-2 text-xs text-muted-foreground/70 italic">
                   {msg.ai_analysis.summary}
+                </p>
+              )}
+              {msg.ai_analysis?.recommended_action && (
+                <p className="mt-1 text-xs text-blue-400 italic">
+                  → {msg.ai_analysis.recommended_action}
                 </p>
               )}
             </div>

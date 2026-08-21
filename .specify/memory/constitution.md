@@ -1,17 +1,16 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.0.0 → 1.1.0 (MINOR: new feature guidance sections added)
+Version change: 1.2.0 → 1.3.0 (MINOR: new Complete AI Pipeline section added)
 Modified principles:
-  - III. AI is Assistive, Not Magical (materially expanded with task/deadline rules)
-  - Quality Bar (expanded with task extraction + deadline detection targets)
-  - Compliance Checklist (expanded with 3 new checks)
+  - Quality Bar (expanded with Complete Pipeline Targets)
+  - Compliance Checklist (expanded with 4 new checks)
 Added sections:
-  - AI Feature Guidance: Task Extraction (purpose, rules, examples, what AI must not do)
-  - AI Feature Guidance: Urgency & Deadline Detection (purpose, rules, examples, what AI must not do)
+  - Complete AI Pipeline (purpose, core principles for the full flow,
+    Needs Attention definition, dashboard result format, pipeline quality bar)
 Removed sections: N/A
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ no changes needed (Constitution Check section generic)
+  - .specify/templates/plan-template.md ✅ no changes needed (Constitution Check gates derive from constitution file)
   - .specify/templates/spec-template.md ✅ no changes needed (requirements format compatible)
   - .specify/templates/tasks-template.md ✅ no changes needed (task structure compatible)
 Follow-up TODOs: None
@@ -104,10 +103,10 @@ remain useful even when AI components are unavailable.
 
 ## AI Feature Guidance
 
-This section provides focused rules for the two AI features being built
-on Days 11-12: Task Extraction and Urgency + Deadline Detection.
-These rules extend Principle III (AI is Assistive, Not Magical) and
-the existing AI Behavior Rules in SPEC.md.
+This section provides focused rules for the AI features being built
+on Days 11-13: Task Extraction, Urgency + Deadline Detection, and
+Recommended Action. These rules extend Principle III (AI is Assistive,
+Not Magical) and the existing AI Behavior Rules in SPEC.md.
 
 ### Task Extraction
 
@@ -250,6 +249,202 @@ The AI MUST recognize and correctly classify these relative expressions:
   is returned and priority defaults to `"normal"`. The user sees the
   message without deadline info; nothing breaks.
 
+### Recommended Action
+
+#### Purpose
+
+Generate a short, actionable recommendation for the user when a message
+arrives. This helps users quickly understand what to do next without
+reading the full message. Recommendations are displayed on the dashboard
+alongside priority, summary, and task extraction.
+
+#### Input → Output Contract
+
+A message enters the system. The AI MUST return:
+
+```json
+{
+  "recommended_action": "Prepare and send the report before the deadline."
+}
+```
+
+The `recommended_action` field is a single string containing one clear
+next step for the user.
+
+#### What a Good Recommended Action Looks Like
+
+1. **One sentence, one action.** "Send the report by 5 PM" — not a
+   paragraph of options.
+2. **Verb-first.** Start with an action verb (Send, Review, Confirm,
+   Prepare, Schedule, Call, etc.).
+3. **Rooted in the message.** The recommendation MUST reflect what the
+   message actually asks for, not an interpretation of what the user
+   should do based on invented context.
+4. **Time-aware when relevant.** If the message contains a deadline, the
+   recommendation SHOULD reference it (e.g., "Submit the form before
+   Friday").
+
+#### What the AI MUST Do
+
+1. **Extract the primary action from the message.** Identify the main
+   verb directed at the recipient and phrase it as a clear next step.
+2. **Keep it under 15 words.** Longer recommendations lose impact on a
+   dashboard scan.
+3. **Use the user's own words when possible.** If the message says
+   "send the slides", the recommendation should be "Send the slides"
+   — not "Distribute the presentation materials".
+4. **Default to "Review this message" when no clear action exists.**
+   Informational messages with no actionable content MUST still produce
+   a recommendation, but it should be generic and honest.
+5. **Return the recommendation in the same language as the message.**
+   If the message is in Arabic, the recommendation MUST be in Arabic.
+
+#### What the AI MUST NEVER Do
+
+- **NEVER invent actions not in the message.** If the message says
+  "meeting tomorrow", the recommendation MUST NOT be "Prepare meeting
+  agenda" — that is an invented action. The correct output is
+  "Review this message" or a direct reference to the stated content.
+- **NEVER generate multiple recommendations.** The field is a single
+  string, not an array. Pick the ONE most important action.
+- **NEVER use hedging language.** "You might want to consider sending
+  the report" is too weak. Use direct imperatives: "Send the report".
+- **NEVER add opinions or judgments.** "You should prioritize this
+  urgent task" adds subjective framing. Stick to the action itself.
+- **NEVER auto-execute the recommendation.** The recommendation is
+  advisory only. The user decides whether and when to act.
+
+#### Quality Bar
+
+- **Actionability**: ≥ 90% of messages with clear action requests MUST
+  produce a recommendation that directly reflects the message's content
+  (tested against a labeled set of 50 messages).
+- **Honesty**: 0 tolerance — recommendations MUST NOT invent actions
+  not present in the message.
+- **Latency**: Recommendation generation is part of the single LLM
+  analysis call (no additional API round-trip).
+- **Graceful fallback**: If recommendation generation fails, the field
+  returns an empty string `""`. The user sees the message without a
+  recommendation; nothing breaks.
+
+## Complete AI Pipeline
+
+This section defines how the five individual agents — Priority, Summary,
+Task Extraction, Deadline Detection, and Recommended Action — connect
+into one end-to-end flow (Day 14). These rules extend Principle II
+(Vertical Slices), Principle III (AI is Assistive, Not Magical), and
+Principle VII (Progressive Enhancement).
+
+### Purpose
+
+When a message arrives, the complete pipeline MUST run every agent in
+sequence and deliver one coherent result to MongoDB and the Dashboard:
+
+```text
+Message
+  ↓
+Priority Agent
+  ↓
+Summary
+  ↓
+Task Extraction
+  ↓
+Deadline Detection
+  ↓
+Recommended Action
+  ↓
+MongoDB
+  ↓
+Dashboard
+```
+
+**Success means**: A user opens the dashboard and immediately sees what
+needs attention, why it matters, and what to do next — without opening
+a single raw message.
+
+### Core Principles for the Full Flow
+
+1. **One message in, one complete analysis out.** Every incoming message
+   MUST pass through all five agents exactly once per processing run.
+   No message is left half-analyzed unless a stage fails, in which case
+   that stage's documented fallback value is stored instead.
+2. **Fixed stage order.** Priority runs first (it drives attention
+   ranking); Recommended Action runs last (it consumes task and deadline
+   context). Stages MUST NOT be reordered or silently skipped.
+3. **Single LLM call.** Priority, tasks, deadlines, and recommendation
+   MUST share one LLM analysis call, consistent with the feature guidance
+   above. Adding pipeline stages MUST NOT multiply API round-trips.
+4. **Persist once, read many.** The pipeline writes the complete analysis
+   to MongoDB as ONE document update. The Dashboard MUST read stored
+   results only — it MUST NOT invoke agents or recompute AI output.
+5. **Per-stage graceful degradation.** Each stage keeps its own fallback
+   (empty arrays, empty strings, default priority). A failed stage MUST
+   NOT block later stages, the database save, or the dashboard render.
+6. **Idempotent processing.** Re-running the pipeline on the same
+   message MUST update the existing document — never create duplicates.
+
+### What "Needs Attention" Means
+
+A message is flagged 🔴 NEEDS ATTENTION only when agent outputs provide
+evidence. The flag MUST be derived from stored signals — never invented.
+
+A message qualifies when ANY of the following is true:
+
+| Signal | Source Agents |
+|---|---|
+| Actionable task extracted AND a near-term deadline detected (e.g., "tonight", "tomorrow") | Task Extraction + Deadline Detection |
+| Priority classified as Urgent AND an actionable task exists | Priority + Task Extraction |
+
+Every flagged card MUST display a **"Why it matters"** line naming the
+actual trigger in plain language (e.g., "A task with a near deadline was
+detected."). Messages that meet no criterion appear normally WITHOUT the
+flag — false positives erode user trust faster than missed flags.
+
+### How the Final Result Looks on the Dashboard
+
+Each analyzed message renders as a card with these fields, in this order:
+
+```text
+🔴 NEEDS ATTENTION
+Send FYP slides
+WhatsApp • Ali
+Deadline: Tonight
+Why it matters: A task with a near deadline was detected.
+Recommended: Send the slides before tonight.
+```
+
+Field mapping rules:
+
+- **Attention badge**: shown only when the Needs Attention criteria are met
+- **Task line**: task description from Task Extraction (the user's own words)
+- **Channel • Sender**: e.g., `WhatsApp • Ali` — from message metadata
+- **Deadline**: original wording preserved (`Tonight`, never a computed datetime)
+- **Why it matters**: trigger explanation tied to real agent signals
+- **Recommended**: single verb-first action, ≤ 15 words
+
+Additional rules:
+
+- All card content comes from stored MongoDB data; the Dashboard formats,
+  it does not compute.
+- Missing optional fields (deadline, recommendation) are omitted cleanly —
+  never rendered as blank space, `null`, or `"undefined"`.
+- The card MUST render completely even when some fields are missing
+  (Progressive Enhancement applies to the final render too).
+
+### Quality Bar for the Complete Pipeline
+
+- **End-to-end**: A message sent through any supported channel appears on
+  the dashboard with all available fields — verified manually per channel.
+- **Latency**: Total pipeline time ≤ 10 seconds per message including the
+  LLM call. The UI shows a loading state; it never blocks or freezes.
+- **Persistence**: 100% of processed messages are saved to MongoDB with
+  whatever analysis succeeded (fallback values for failed stages).
+- **Idempotency**: Reprocessing produces zero duplicate documents.
+- **Flag honesty**: 100% of NEEDS ATTENTION flags MUST be explainable by
+  their "Why it matters" line; 0 tolerance for invented reasons.
+- **Fidelity**: Card fields map 1:1 to stored data — no recomputation,
+  re-classification, or agent calls in the UI layer.
+
 ## Technical Principles
 
 ### Frontend
@@ -316,6 +511,21 @@ A feature is DONE when:
 - Relative time expression accuracy ≥ 90%
 - Single LLM call for priority + tasks + deadlines (no extra latency)
 
+### Recommended Action Targets
+
+- Recommendation actionability ≥ 90% on labeled test set
+- Recommendation hallucination rate = 0% (no invented actions)
+- Single LLM call for priority + tasks + deadlines + recommendations
+- Fallback returns empty string on failure (no errors shown)
+
+### Complete Pipeline Targets
+
+- End-to-end flow verified: message → all five agents → MongoDB → dashboard card
+- Total pipeline latency ≤ 10 seconds per message (LLM call dominates; UI shows loading state)
+- Zero duplicate documents when a message is reprocessed
+- Every NEEDS ATTENTION flag carries a truthful "Why it matters" explanation
+- Dashboard renders exclusively from stored data (no agent invocation from UI)
+
 ## Decision Guidelines
 
 When facing uncertainty, use these tiebreakers in order:
@@ -370,5 +580,11 @@ Before merging any feature branch, verify:
 - [ ] Task extraction produces no false positives (no tasks from non-actionable messages)
 - [ ] No invented deadlines — all deadline values come from the message or are null
 - [ ] Relative time expressions preserved as-is when exact conversion is unreliable
+- [ ] Recommended actions reflect the message content (no invented actions)
+- [ ] Recommended actions are single, concise, verb-first strings
+- [ ] Full pipeline runs on every incoming message (five agents, fixed order)
+- [ ] Complete analysis persisted to MongoDB in one document; dashboard reads stored data only
+- [ ] NEEDS ATTENTION flags derive from agent signals and always include a "Why it matters" line
+- [ ] Reprocessing a message never creates duplicates
 
-**Version**: 1.1.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-20
+**Version**: 1.3.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-21

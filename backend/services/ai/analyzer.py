@@ -4,6 +4,7 @@ import traceback
 from bson import ObjectId
 from .providers.base import BaseLLMProvider, AIAnalysisResult
 from .providers.groq import GroqProvider
+from .attention import evaluate_attention
 from database import tasks_collection
 
 logger = logging.getLogger(__name__)
@@ -18,24 +19,39 @@ async def analyze_message(message_content: str, message_id: str = None) -> dict:
 
     try:
         logger.info("Starting AI analysis for message (%d chars)", len(message_content))
-        result = await provider.analyze(message_content)
-        logger.info("Priority analysis done: %s (%.0f%%)", result.priority, result.confidence * 100)
 
-        summary = await provider.generate_summary(message_content)
-        logger.info("Summary analysis done: %s", "OK" if summary else "null")
+        # Single LLM call: priority + tasks + deadlines + summary +
+        # recommended action come back together.
+        result = await provider.analyze(message_content)
+
+        recommendation = result.recommended_actions[0] if result.recommended_actions else ""
 
         analysis = {
             "priority": result.priority,
             "confidence": result.confidence,
             "explanation": result.explanation,
-            "summary": summary,
-            "recommended_actions": result.recommended_actions,
+            "summary": result.summary,
+            "recommended_action": recommendation,
+            "recommended_actions": list(result.recommended_actions),
             "tasks_extracted": result.tasks_extracted,
             "deadlines": result.deadlines,
             "provider": "groq",
             "analyzed_at": datetime.now(timezone.utc),
             "status": "completed",
         }
+
+        analysis.update(evaluate_attention(analysis))
+
+        logger.info(
+            "Pipeline stages complete for message %s (1 LLM call): priority=%s, summary=%s, tasks=%d, deadlines=%d, recommendation=%s, flagged=%s",
+            message_id or "(unsaved)",
+            analysis["priority"],
+            bool(analysis["summary"]),
+            len(result.tasks_extracted),
+            len(result.deadlines),
+            bool(recommendation),
+            analysis["needs_attention"],
+        )
 
         if message_id and result.tasks_extracted:
             preview = message_content[:80] + ("..." if len(message_content) > 80 else "")
@@ -57,13 +73,22 @@ async def analyze_message(message_content: str, message_id: str = None) -> dict:
 
         return analysis
     except Exception as e:
-        logger.error("AI analysis FAILED: %s", e)
-        logger.error("Traceback: %s", traceback.format_exc())
+        error_text = str(e)
+        if "429" in error_text or "rate_limit" in error_text.lower():
+            logger.error(
+                "AI analysis BLOCKED — Groq rate limit / daily token cap hit. "
+                "Message stored with fallback values until quota resets. "
+                "Provider said: %s",
+                error_text[:300],
+            )
+        else:
+            logger.error("AI analysis FAILED: %s", e, exc_info=True)
         return {
             "priority": "normal",
             "confidence": 0.0,
             "explanation": "Analysis failed, defaulting to normal priority",
             "summary": None,
+            "recommended_action": "",
             "recommended_actions": [],
             "tasks_extracted": [],
             "deadlines": [],

@@ -9,9 +9,17 @@ logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
 
-PRIORITY_PROMPT = """You are a message priority classifier AND task extractor. You have TWO jobs:
-1. Classify the message priority
-2. Extract actionable tasks with deadlines
+MODEL_NAME = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+
+# Single-call analysis prompt: priority + tasks + deadlines + summary +
+# recommended action in ONE response. One message must never cost more
+# than one LLM round-trip (constitution: single LLM call).
+ANALYSIS_PROMPT = """You are a communication analysis engine. Analyze the message below and complete ALL FOUR jobs:
+
+1. CLASSIFY PRIORITY
+2. EXTRACT ACTIONABLE TASKS WITH DEADLINES
+3. WRITE A ONE-SENTENCE SUMMARY
+4. RECOMMEND ONE NEXT ACTION FOR THE RECIPIENT
 
 PRIORITY LEVELS:
 
@@ -49,7 +57,7 @@ For each task, extract:
 - priority_indicator: Words suggesting urgency from the message, or null
 - requires_action: Always true
 
-CRITICAL RULES:
+CRITICAL TASK RULES:
 - Only extract tasks explicitly mentioned, never invent tasks
 - "I'll send you the files tomorrow" is NOT a task for the recipient
 - "FYI server down tomorrow" is NOT a task (informational)
@@ -67,19 +75,25 @@ DEADLINE DETECTION:
 - "before the meeting" -> deadline: "before the meeting" (do NOT invent a date)
 - No time expression -> deadline: null
 
+SUMMARY RULES:
+- One sentence, under 20 words
+- Capture the core request or information
+- Same language as the message
+
+RECOMMENDED ACTION RULES:
+- One sentence, verb-first, under 15 words
+- Reflect only what the message actually asks the recipient to do
+- Never invent actions not present in the message
+- If no clear action exists, use "Review this message"
+- Same language as the message
+
 MESSAGE TO ANALYZE:
 ---
 {message}
 ---
 
-Return a JSON object with these fields:
-- priority: "urgent", "important", "normal", or "low"
-- confidence: 0.0 to 1.0
-- explanation: 1-2 sentences explaining why
-- tasks_extracted: array of task objects (empty array if no tasks)
-- deadlines: array of deadline strings found in the message (empty array if none)
-
-Return ONLY the JSON object, no other text."""
+Return ONLY a JSON object with exactly these fields:
+{{"priority": "urgent", "confidence": 0.9, "explanation": "1-2 sentences", "summary": "one sentence", "tasks_extracted": [{{"description": "...", "deadline": "...", "priority_indicator": "...", "requires_action": true}}], "deadlines": ["..."], "recommended_action": "verb-first sentence"}}"""
 
 VALID_PRIORITIES = {"urgent", "important", "normal", "low"}
 
@@ -108,6 +122,8 @@ def normalize_priority(raw: str) -> str:
 
 def clean_response(text: str) -> str:
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = re.sub(r"```json\s*", "", text)
+    text = re.sub(r"```\s*$", "", text)
     text = text.strip()
     json_match = re.search(r"\{.*\}", text, re.DOTALL)
     if json_match:
@@ -118,29 +134,36 @@ def clean_response(text: str) -> str:
 class GroqProvider(BaseLLMProvider):
     def __init__(self):
         api_key = os.getenv("GROQ_API_KEY")
+        self.model = MODEL_NAME
         if not api_key:
-            logger.error("GROQ_API_KEY is not set!")
+            logger.error("GROQ_API_KEY is not set! Analysis WILL fail.")
+        else:
+            logger.info("GroqProvider initialized with model=%s, key=%s...", self.model, api_key[:8])
         self.client = AsyncGroq(api_key=api_key)
-        self.model = "qwen/qwen3.6-27b"
 
-    async def analyze(self, message: str) -> AIAnalysisResult:
-        prompt = PRIORITY_PROMPT.format(message=message)
-
+    async def _complete(self, prompt: str) -> dict:
+        """One LLM call returning parsed JSON. Errors propagate — no
+        silent swallowing here."""
         response = await self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
+            messages=[{"role": "user", "content": prompt + "\n/no_think"}],
             temperature=0.3,
+            max_tokens=4096,
         )
-
         raw_content = response.choices[0].message.content
         cleaned = clean_response(raw_content)
-        result = json.loads(cleaned)
+        return json.loads(cleaned)
 
-        result["priority"] = normalize_priority(result.get("priority", "normal"))
+    async def analyze(self, message: str) -> AIAnalysisResult:
+        # NOTE: .replace, NOT .format — messages may contain braces.
+        prompt = ANALYSIS_PROMPT.replace("{message}", message)
 
-        if not (0.0 <= result.get("confidence", 0) <= 1.0):
-            result["confidence"] = 0.5
+        result = await self._complete(prompt)
+
+        priority = normalize_priority(str(result.get("priority", "normal")))
+        confidence = result.get("confidence", 0.5)
+        if not isinstance(confidence, (int, float)) or not (0.0 <= confidence <= 1.0):
+            confidence = 0.5
 
         tasks_raw = result.get("tasks_extracted", [])
         if not isinstance(tasks_raw, list):
@@ -154,33 +177,51 @@ class GroqProvider(BaseLLMProvider):
                     "priority_indicator": t.get("priority_indicator"),
                     "requires_action": True,
                 })
+            elif isinstance(t, str) and t.strip():
+                tasks.append({
+                    "description": t.strip(),
+                    "deadline": None,
+                    "priority_indicator": None,
+                    "requires_action": True,
+                })
 
-        result["tasks_extracted"] = tasks
-        result["deadlines"] = result.get("deadlines", [])
+        action = str(result.get("recommended_action") or "").strip()
 
-        return AIAnalysisResult(**result)
+        return AIAnalysisResult(
+            priority=priority,
+            confidence=confidence,
+            explanation=result.get("explanation"),
+            summary=result.get("summary"),
+            recommended_actions=[action] if action else [],
+            tasks_extracted=tasks,
+            deadlines=result.get("deadlines", []) or [],
+        )
 
     def _load_prompt(self, filename: str) -> str:
         path = os.path.join(PROMPTS_DIR, filename)
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return f.read()
 
     async def generate_summary(self, message_content: str) -> str | None:
+        """Legacy standalone call. The pipeline no longer uses this —
+        kept only for backward compatibility."""
         try:
             prompt_template = self._load_prompt("summary.txt")
             prompt = prompt_template.replace("{message}", message_content)
-
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-                temperature=0.3,
-            )
-
-            raw_content = response.choices[0].message.content
-            cleaned = clean_response(raw_content)
-            result = json.loads(cleaned)
+            result = await self._complete(prompt)
             return result.get("summary")
         except Exception as e:
-            logger.error(f"Summary generation failed: {e}")
+            logger.error("Summary generation failed: %s", e, exc_info=True)
             return None
+
+    async def generate_recommendation(self, message_content: str) -> str:
+        """Legacy standalone call. The pipeline no longer uses this —
+        kept only for backward compatibility."""
+        try:
+            prompt_template = self._load_prompt("actions.txt")
+            prompt = prompt_template.replace("{message}", message_content)
+            result = await self._complete(prompt)
+            return result.get("recommended_action", "")
+        except Exception as e:
+            logger.error("Recommendation generation failed: %s", e, exc_info=True)
+            return ""
