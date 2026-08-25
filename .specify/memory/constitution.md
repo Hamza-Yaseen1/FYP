@@ -1,26 +1,24 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.4.0 → 1.5.0 (MINOR: new Day 16 Login Contract, Day 17 Route
-Protection Contract, and Auth Pages UI/UX Principles sections added)
+Version change: 1.5.0 → 1.6.0 (MINOR: new Day 18 User Isolation Contract
+section added, User Isolation Rules strengthened, Compliance Checklist
+expanded with 6 isolation-specific checks)
 Modified principles:
-  - Authentication & Multi-User System (intro updated to name Days 16-17)
-  - Quality Bar for Authentication (extended with login/session/UI criteria)
-  - Compliance Checklist (expanded with 5 login/session/route-protection/UI checks)
+  - User Isolation Rules (5 rules strengthened to 11 with explicit
+    data ownership, query filtering, 404 semantics, and verification)
 Added sections:
-  - Day 16 Login Contract (POST /auth/login, bcrypt verification, JWT
-    HttpOnly cookie session, post-login routing to the user's own dashboard)
-  - Day 17 Route Protection Contract (GET /auth/me, shared FastAPI auth
-    dependency on every data endpoint, Next.js middleware redirects,
-    complete public allowlist, no client-side-only protection)
-  - Auth Pages UI/UX Principles (dark theme, centered card layout,
-    professional inputs, single primary button, honest errors, consistency)
+  - Day 18 User Isolation Contract (purpose, core privacy principles,
+    strict data ownership rules, what must never happen, quality bar)
 Removed sections: N/A
 Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ no changes needed (Constitution Check gates derive from constitution file)
-  - .specify/templates/spec-template.md ✅ no changes needed (requirements format compatible)
-  - .specify/templates/tasks-template.md ✅ no changes needed (task structure compatible)
-  - .specify/templates/commands/*.md ✅ N/A — no command templates exist in this repo
+  - .specify/templates/plan-template.md ✅ no changes needed
+    (Constitution Check gates derive from constitution file)
+  - .specify/templates/spec-template.md ✅ no changes needed
+    (requirements format compatible with isolation constraints)
+  - .specify/templates/tasks-template.md ✅ no changes needed
+    (task structure compatible; isolation tests follow standard patterns)
+  - .specify/templates/commands/*.md ✅ N/A — no command templates exist
 Follow-up TODOs: None
 -->
 
@@ -490,20 +488,50 @@ neither can see, modify, or even detect the other's data.
 ### User Isolation Rules
 
 User isolation is the highest-priority requirement of Week 3. One user
-MUST NEVER see another user's data.
+MUST NEVER see another user's data. Every rule in this section is
+mandatory and non-negotiable.
 
-1. Every message, task, and analysis document MUST carry a `user_id`
-   field identifying its owner, set server-side at creation time.
+1. Every message, task, analysis, connection, and webhook document MUST
+   carry a `user_id` field identifying its owner, set server-side at
+   creation time. The `user_id` MUST be derived exclusively from the
+   verified JWT session — never from request body, query string, or
+   client-supplied header.
 2. Every database query serving a request MUST filter by the
    authenticated user's `user_id`. Unfiltered queries are forbidden in
-   request paths.
+   all request paths, including background workers, webhooks, and
+   scheduled tasks.
 3. Requests for another user's resource MUST return 404 (not 403) so
-   the resource's existence is not confirmed.
+   the resource's existence is never confirmed. The response body MUST
+   NOT differ between "resource does not exist" and "resource belongs
+   to another user."
 4. Any new collection MUST define its ownership model before the first
-   write to it.
+   write to it. The ownership model MUST specify: the field name
+   (`user_id`), how it is set (server-side from JWT), and which queries
+   filter on it.
 5. Isolation verification: register users A and B; B MUST see zero of
    A's messages and tasks through both the UI and direct API calls,
-   including guessed object IDs.
+   including guessed object IDs. This test MUST pass before any
+   data-access code ships to production.
+6. Aggregation pipelines, joins, and bulk operations MUST apply the
+   `user_id` filter before any other computation. Post-filter isolation
+   is not sufficient — leaked data in intermediate results is a breach.
+7. Error responses MUST NOT expose data from other users. A 404, 403,
+   500, or validation error MUST NOT include another user's IDs, names,
+   email addresses, or message content in the response body or logs
+   visible to the client.
+8. Frontend state MUST NOT store, cache, or render data belonging to
+   another user. After logout, all client-side state (React state,
+   URL params, service worker caches) MUST be cleared before the next
+   user's session begins.
+9. Database indexes MUST support efficient per-user queries. Full
+   collection scans without a `user_id` filter are forbidden in
+   production request paths.
+10. Webhook ingestion endpoints MUST resolve the owning user from
+    server-side credentials (API key, signed secret) — never from
+    user-supplied query parameters or headers.
+11. Any new API endpoint that returns a list of resources MUST enforce
+    `user_id` filtering at the query layer, not by post-filtering
+    results in application code.
 
 ### Password Handling Rules
 
@@ -584,6 +612,142 @@ MUST NEVER see another user's data.
 - **No cosmetic-only protection**: Hiding links, buttons, or checking
   storage in React is cosmetic. The server MUST independently enforce every
   rule; the UI layer adds convenience, never authority.
+
+### Day 18 User Isolation Contract
+
+This section defines the strict data isolation rules for Day 18. It
+extends Principle IV (User Control), Principle V (Security and Privacy),
+and the User Isolation Rules above. Every message, task, analysis, and
+related datum MUST belong to exactly one user. Isolation is not a feature
+— it is a security invariant.
+
+#### Purpose of User Isolation
+
+User Isolation guarantees that every piece of data in the system is
+owned by exactly one user and is invisible to all others. The system
+MUST enforce this at every layer: database queries, API responses, UI
+rendering, error messages, and logs. A breach of isolation is a critical
+security failure — not a bug.
+
+**Success means**: User A has Message A, User B has Message B. User A
+MUST NEVER see Message B. User B MUST NEVER see Message A. This holds
+for all data types: messages, tasks, analyses, connections, webhooks,
+and any future collections.
+
+#### Core Privacy & Security Principles
+
+1. **Data belongs to the user, not the system.** Every document in
+   MongoDB is owned by one user. The system is a custodian, not an
+   owner. Users MUST be able to delete all their data and have it
+   removed from every collection, index, and cache.
+2. **Least privilege by default.** A user's session grants access to
+   ONLY that user's data. No endpoint, query, or background process
+   may access data across user boundaries without an explicit, audited
+   mechanism (which does not exist in this system today).
+3. **Deny by existence.** If a resource belongs to another user, the
+   system MUST respond as if the resource does not exist (404). The
+   system MUST NOT confirm, hint at, or leak the existence of data
+   belonging to other users through status codes, error messages, or
+   timing differences.
+4. **Server-side ownership.** The `user_id` is extracted from the
+   verified JWT session on every request. Client-supplied user IDs are
+   never trusted. The server sets the `user_id` at write time; the
+   client cannot override it.
+5. **No cross-user aggregation.** Analytics, dashboards, and reports
+   MUST only aggregate the current user's data. The system MUST NOT
+   produce cross-user statistics, leaderboards, or comparisons — even
+   if the data appears anonymized.
+6. **Audit trail.** Every database write MUST include the owning
+   `user_id`. Every database read MUST filter on `user_id` before any
+   other operation. These two rules are the foundation of isolation
+   and MUST NOT be bypassed.
+
+#### Strict Rules for Data Ownership
+
+Every data entity in the system MUST comply with these ownership rules:
+
+| Entity | Ownership Field | Set By | Filtered By |
+|---|---|---|---|
+| User account | `_id` | System (registration) | N/A (identity) |
+| Message | `user_id` | Server (webhook/simulate) | Every query |
+| Task | `user_id` | Server (task extraction) | Every query |
+| Analysis | `user_id` | Server (pipeline) | Every query |
+| Connection | `user_id` | Server (user action) | Every query |
+
+Rules:
+
+1. The `user_id` field MUST be present on every document in every
+   collection. No exceptions.
+2. The `user_id` MUST be set server-side from the verified JWT at the
+   moment of document creation. It MUST NOT come from the request body,
+   query parameters, or headers.
+3. Every database query in a request path MUST include a `user_id`
+   filter as its FIRST condition. Queries without `user_id` are
+   forbidden.
+4. Bulk operations (insert many, update many, delete many) MUST apply
+   `user_id` scope to prevent cross-user mutations.
+5. Database migrations that touch user-owned collections MUST preserve
+   the `user_id` field on every document. Migrations MUST NOT
+   temporarily remove or nullify `user_id`.
+
+#### What Must NEVER Happen
+
+These are absolute prohibitions. Violation of any one is a critical
+security failure that blocks release:
+
+- **NEVER return another user's data.** An API response MUST NOT
+  include any document, field, ID, email, name, or content belonging
+  to a different user — even partially, even in an error message, even
+  in a log visible to the client.
+- **NEVER query without user_id filtering.** A database read or write
+  that does not filter by the authenticated user's `user_id` is
+  forbidden. This applies to every code path: request handlers,
+  background jobs, webhook processors, and scheduled tasks.
+- **NEVER trust client-supplied user IDs.** The `user_id` MUST come
+  from the verified JWT session only. A request body containing
+  `"user_id": "..."` or `"owner": "..."` MUST be ignored or rejected.
+- **NEVER leak existence.** A 403 response that says "resource exists
+  but belongs to another user" is a breach. The correct response is
+  404 with no distinction between "not found" and "not yours."
+- **NEVER cache cross-user data.** In-memory caches, Redis caches,
+  CDN caches, and browser caches MUST NOT contain data from multiple
+  users in the same entry. Per-user caching is permitted only when the
+  cache key includes the `user_id`.
+- **NEVER log user data across boundaries.** Log entries MUST NOT
+  include another user's email, name, message content, or IDs. Error
+  logs that capture full request context MUST sanitize cross-user
+  references before writing.
+- **NEVER bypass isolation for "convenience."** Admin views, debugging
+  tools, analytics dashboards, and internal APIs are NOT exempt from
+  isolation. Every access path enforces the same rules.
+- **NEVER use partial isolation.** Isolation MUST apply to every data
+  type equally. A system that isolates messages but leaks tasks is not
+  isolated. Every collection is in scope.
+
+#### Quality Bar for User Isolation
+
+- **Two-user isolation test**: Register users A and B. Create messages,
+  tasks, and connections for each. Verify: A sees only A's data; B sees
+  only B's data. Verified through both the UI and direct API calls,
+  including guessed object IDs.
+- **API response audit**: Every endpoint that returns user data MUST be
+  tested with two sessions. Response bodies MUST NOT contain any field
+ , ID, or string from the other user.
+- **404 semantics**: Requesting another user's resource by ID MUST
+  return 404. The response body MUST be identical to requesting a
+  non-existent resource.
+- **Query coverage**: Every database query in the codebase MUST include
+  a `user_id` filter. Automated testing or code review MUST verify
+  this. Any query without `user_id` blocks merge.
+- **No cross-user logs**: Error logs and application logs MUST NOT
+  contain another user's data. Verified by inspecting log output
+  during the two-user isolation test.
+- **Logout state clear**: After logout, navigating to any protected
+  page MUST show the login screen — not stale data from the previous
+  user. Verified by logging out and logging in as a different user.
+- **Ownership model documentation**: Every collection MUST have its
+  ownership model documented (field name, source, query requirement)
+  before it ships. Un documented collections block merge.
 
 ### Auth Pages UI/UX Principles
 
@@ -789,5 +953,11 @@ Before merging any feature branch, verify:
 - [ ] Every data endpoint enforces authentication through the shared server-side dependency/middleware (no unprotected endpoints)
 - [ ] Logged-in visits to `/login` or `/signup` redirect to `/dashboard`; logged-out visits to protected pages redirect to `/login`
 - [ ] Auth pages share one dark-theme design with loading, focus, disabled, and inline error states
+- [ ] Every document in every collection carries a `user_id` set server-side from the JWT
+- [ ] Every database read/write includes a `user_id` filter as its first condition
+- [ ] Requests for another user's resource return 404 with a body identical to "not found"
+- [ ] API responses never contain any field, ID, name, or content from another user
+- [ ] Logout clears all client state; the next user's session shows no stale data from the previous user
+- [ ] New collections have a documented ownership model (field name, source, query requirement) before merge
 
-**Version**: 1.5.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-24
+**Version**: 1.6.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-25

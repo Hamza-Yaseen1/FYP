@@ -30,7 +30,7 @@ async def create_message(
     result = await messages_collection.insert_one(doc)
     doc["_id"] = result.inserted_id
 
-    ai_analysis = await analyze_message(payload.content, message_id=str(result.inserted_id))
+    ai_analysis = await analyze_message(payload.content, message_id=str(result.inserted_id), user_id=str(current_user["_id"]))
     await messages_collection.update_one(
         {"_id": result.inserted_id},
         {"$set": {"ai_analysis": ai_analysis}},

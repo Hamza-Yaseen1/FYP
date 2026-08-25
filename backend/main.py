@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import logging
 
-from database import users_collection
+from database import users_collection, messages_collection, tasks_collection
 from routes.auth import router as auth_router
 from routes.messages import router as messages_router
 from routes.webhooks import router as webhooks_router
@@ -22,6 +22,8 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await users_collection.create_index("email", unique=True)
+    await messages_collection.create_index([("user_id", 1), ("created_at", -1)])
+    await tasks_collection.create_index([("user_id", 1), ("created_at", -1)])
     yield
 
 

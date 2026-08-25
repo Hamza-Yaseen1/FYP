@@ -14,7 +14,7 @@ def get_provider() -> BaseLLMProvider:
     return GroqProvider()
 
 
-async def analyze_message(message_content: str, message_id: str = None) -> dict:
+async def analyze_message(message_content: str, message_id: str = None, user_id: str = None) -> dict:
     provider = get_provider()
 
     try:
@@ -54,22 +54,29 @@ async def analyze_message(message_content: str, message_id: str = None) -> dict:
         )
 
         if message_id and result.tasks_extracted:
-            preview = message_content[:80] + ("..." if len(message_content) > 80 else "")
-            task_docs = []
-            for task in result.tasks_extracted:
-                task_docs.append({
-                    "description": task["description"],
-                    "deadline": task.get("deadline"),
-                    "priority_indicator": task.get("priority_indicator"),
-                    "requires_action": True,
-                    "status": "pending",
-                    "source_message_id": message_id,
-                    "source_message_preview": preview,
-                    "created_at": datetime.now(timezone.utc),
-                })
-            if task_docs:
-                await tasks_collection.insert_many(task_docs)
-                logger.info("Stored %d tasks for message %s", len(task_docs), message_id)
+            if not user_id:
+                logger.warning(
+                    "Skipping task creation for message %s: no user_id provided",
+                    message_id,
+                )
+            else:
+                preview = message_content[:80] + ("..." if len(message_content) > 80 else "")
+                task_docs = []
+                for task in result.tasks_extracted:
+                    task_docs.append({
+                        "user_id": user_id,
+                        "description": task["description"],
+                        "deadline": task.get("deadline"),
+                        "priority_indicator": task.get("priority_indicator"),
+                        "requires_action": True,
+                        "status": "pending",
+                        "source_message_id": message_id,
+                        "source_message_preview": preview,
+                        "created_at": datetime.now(timezone.utc),
+                    })
+                if task_docs:
+                    await tasks_collection.insert_many(task_docs)
+                    logger.info("Stored %d tasks for message %s", len(task_docs), message_id)
 
         return analysis
     except Exception as e:
