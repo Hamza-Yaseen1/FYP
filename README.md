@@ -4,6 +4,14 @@
 
 *Intelligent communication management powered by AI*
 
+<br/>
+
+## 👨‍💻 **Developed by**
+
+# **[HAMZA YASEEN](https://github.com/Hamza-Yaseen1)**
+
+<br/>
+
 [![Next.js](https://img.shields.io/badge/Next.js-16.3-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
@@ -253,6 +261,15 @@ For questions or issues, please open an issue in the repository.
 
 <div align="center">
 
-**Built with ❤️ using Next.js and FastAPI**
+**Built with ❤️ by Hamza Yaseen using Next.js and FastAPI**
+
+---
+
+### 📧 Contact
+
+**Hamza Yaseen**  
+📩 Email: [your.email@example.com](mailto:hamza.sce1@example.com)  
+💼 LinkedIn: [linkedin.com/in/hamzayaseen](https://www.linkedin.com/in/hamza-yaseen-3a807b300/)  
+🐙 GitHub: [@hamzayaseen](https://github.com/Hamza-Yaseen1)
 
 </div>
