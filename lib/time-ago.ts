@@ -1,11 +1,26 @@
-export function timeAgo(dateString: string): string {
-  const now = new Date();
-  const date = new Date(dateString);
-  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+const MINUTE = 60;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
 
-  if (seconds < 60) return "just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
-  return date.toLocaleDateString();
+export function parseApiDate(dateString: string): Date {
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(dateString);
+  return new Date(hasTimezone ? dateString : `${dateString}Z`);
+}
+
+export function timeAgo(dateString: string): string {
+  const date = parseApiDate(dateString);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+
+  if (seconds < MINUTE) return "Just now";
+  if (seconds < HOUR) return `${Math.floor(seconds / MINUTE)}m ago`;
+  if (seconds < DAY) return `${Math.floor(seconds / HOUR)}h ago`;
+  if (seconds < WEEK) return `${Math.floor(seconds / DAY)}d ago`;
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }

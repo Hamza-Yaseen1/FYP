@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { apiFetch } from "@/lib/api";
 
 export default function SimulateMessage({ onSent }: { onSent: () => void }) {
   const [sender, setSender] = useState("");
@@ -16,9 +17,8 @@ export default function SimulateMessage({ onSent }: { onSent: () => void }) {
 
     setSending(true);
     try {
-      await fetch("http://localhost:8000/webhooks/whatsapp", {
+      await apiFetch("/webhooks/whatsapp", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sender: sender.trim(), message: message.trim() }),
       });
       setSender("");

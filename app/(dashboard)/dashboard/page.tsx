@@ -5,6 +5,7 @@ import HealthBadge from "@/components/HealthBadge";
 import MessageList from "@/components/MessageList";
 import NeedsAttentionSection from "@/components/NeedsAttentionSection";
 import SimulateMessage from "@/components/SimulateMessage";
+import { apiFetch } from "@/lib/api";
 
 interface Task {
   id: string;
@@ -22,8 +23,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("http://localhost:8000/tasks")
-      .then((res) => res.json())
+    apiFetch<Task[]>("/tasks")
       .then((data) => {
         if (!cancelled) setTasks(data);
       })
@@ -33,16 +33,13 @@ export default function DashboardPage() {
 
   const markDone = async (taskId: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/tasks/${taskId}/status`, {
+      await apiFetch(`/tasks/${taskId}/status`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "completed" }),
       });
-      if (res.ok) {
-        setTasks((prev) =>
-          prev.map((t) => (t.id === taskId ? { ...t, status: "completed" } : t))
-        );
-      }
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, status: "completed" } : t))
+      );
     } catch {
       // Error handled silently
     }

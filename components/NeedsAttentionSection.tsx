@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import NeedsAttentionCard from "@/components/NeedsAttentionCard";
+import { apiFetch } from "@/lib/api";
 
 interface AttentionMessage {
   id: string;
@@ -36,8 +37,7 @@ export default function NeedsAttentionSection({
 
   useEffect(() => {
     let cancelled = false;
-    fetch("http://localhost:8000/messages")
-      .then((res) => res.json())
+    apiFetch<AttentionMessage[]>("/messages")
       .then((data) => {
         if (!cancelled) {
           setMessages(Array.isArray(data) ? data : []);

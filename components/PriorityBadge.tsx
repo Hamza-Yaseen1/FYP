@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { apiFetch } from "@/lib/api";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -68,15 +69,13 @@ export default function PriorityBadge({
 
     setIsUpdating(true);
     try {
-      const response = await fetch(
-        `http://localhost:8000/messages/${messageId}/priority?priority=${newPriority}`,
+      await apiFetch(
+        `/messages/${messageId}/priority?priority=${newPriority}`,
         { method: "PUT" }
       );
 
-      if (response.ok) {
-        setCurrentPriority(newPriority);
-        onPriorityChange?.(newPriority);
-      }
+      setCurrentPriority(newPriority);
+      onPriorityChange?.(newPriority);
     } catch (error) {
       console.error("Failed to update priority:", error);
     } finally {

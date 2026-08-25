@@ -1,18 +1,26 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.2.0 → 1.3.0 (MINOR: new Complete AI Pipeline section added)
+Version change: 1.4.0 → 1.5.0 (MINOR: new Day 16 Login Contract, Day 17 Route
+Protection Contract, and Auth Pages UI/UX Principles sections added)
 Modified principles:
-  - Quality Bar (expanded with Complete Pipeline Targets)
-  - Compliance Checklist (expanded with 4 new checks)
+  - Authentication & Multi-User System (intro updated to name Days 16-17)
+  - Quality Bar for Authentication (extended with login/session/UI criteria)
+  - Compliance Checklist (expanded with 5 login/session/route-protection/UI checks)
 Added sections:
-  - Complete AI Pipeline (purpose, core principles for the full flow,
-    Needs Attention definition, dashboard result format, pipeline quality bar)
+  - Day 16 Login Contract (POST /auth/login, bcrypt verification, JWT
+    HttpOnly cookie session, post-login routing to the user's own dashboard)
+  - Day 17 Route Protection Contract (GET /auth/me, shared FastAPI auth
+    dependency on every data endpoint, Next.js middleware redirects,
+    complete public allowlist, no client-side-only protection)
+  - Auth Pages UI/UX Principles (dark theme, centered card layout,
+    professional inputs, single primary button, honest errors, consistency)
 Removed sections: N/A
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ no changes needed (Constitution Check gates derive from constitution file)
   - .specify/templates/spec-template.md ✅ no changes needed (requirements format compatible)
   - .specify/templates/tasks-template.md ✅ no changes needed (task structure compatible)
+  - .specify/templates/commands/*.md ✅ N/A — no command templates exist in this repo
 Follow-up TODOs: None
 -->
 
@@ -445,6 +453,191 @@ Additional rules:
 - **Fidelity**: Card fields map 1:1 to stored data — no recomputation,
   re-classification, or agent calls in the UI layer.
 
+## Authentication & Multi-User System
+
+This section defines the rules for turning Communication AI from a
+single-user prototype into a real multi-user SaaS application (Week 3).
+These rules extend Principle IV (User Control) and Principle V (Security
+and Privacy). Day 15 delivered Signup; Days 16-17 deliver Login with JWT
+sessions, full route protection, and the finished auth-page UI.
+
+### Purpose of Authentication
+
+Authentication converts the system into a multi-user application where
+every message, task, and analysis belongs to exactly one account. Users
+MUST be able to register and log in, and the system MUST guarantee that
+each user sees only their own data.
+
+**Success means**: Two users can use the system at the same time, and
+neither can see, modify, or even detect the other's data.
+
+### Core Security Principles
+
+1. **Deny by default.** Every page and API endpoint is unauthenticated
+   until explicitly allowlisted. Only `/login`, `/signup`, and health
+   checks are public.
+2. **Never trust the client.** User identity is derived ONLY from the
+   verified session token on the server. A user ID supplied in a request
+   body, query string, or header is never used for authorization.
+3. **Server-side enforcement.** Protection MUST be enforced by FastAPI
+   dependencies/middleware and Next.js middleware. Hiding links or
+   buttons in the UI is cosmetic, never sufficient.
+4. **Fail closed.** Missing, expired, or invalid credentials result in
+   denial of access — never degraded or read-only access.
+5. **Minimal exposure.** Auth responses and errors MUST NOT reveal
+   password hashes, tokens, internal IDs of other users, or stack traces.
+
+### User Isolation Rules
+
+User isolation is the highest-priority requirement of Week 3. One user
+MUST NEVER see another user's data.
+
+1. Every message, task, and analysis document MUST carry a `user_id`
+   field identifying its owner, set server-side at creation time.
+2. Every database query serving a request MUST filter by the
+   authenticated user's `user_id`. Unfiltered queries are forbidden in
+   request paths.
+3. Requests for another user's resource MUST return 404 (not 403) so
+   the resource's existence is not confirmed.
+4. Any new collection MUST define its ownership model before the first
+   write to it.
+5. Isolation verification: register users A and B; B MUST see zero of
+   A's messages and tasks through both the UI and direct API calls,
+   including guessed object IDs.
+
+### Password Handling Rules
+
+1. Passwords MUST be hashed with bcrypt (or argon2id) before storage.
+   Plaintext passwords MUST NEVER be stored, logged, or returned by any
+   endpoint.
+2. Minimum password length is 8 characters, enforced on both client
+   and server.
+3. Email addresses are unique (unique index on `users.email`); duplicate
+   registrations MUST be rejected with a clear error message.
+4. Failed login MUST return one generic error ("Invalid email or
+   password") — never reveal whether the email exists.
+5. Password fields MUST be excluded from all API responses, logs, and
+   serialized documents.
+
+### What Must Be Protected
+
+- **Pages**: `/dashboard`, `/tasks`, `/attention`, `/inbox`,
+  `/connections`, `/settings` — unauthenticated visits redirect to
+  `/login`.
+- **API endpoints**: `/messages`, `/tasks`, `/auth/me`, and every other
+  data endpoint — unauthenticated calls return 401 Unauthorized.
+- **Public surface**: only `/login`, `/signup`, and backend health
+  checks.
+- **Webhook/simulate endpoints**: each MUST have an explicit documented
+  auth decision (authenticated, or scoped with a secret) — none may be
+  silently left open.
+
+### Day 15 Signup Contract
+
+- **Page**: `/signup` with four fields: Name, Email, Password, Confirm
+  Password.
+- **Endpoint**: `POST /auth/register` accepting `{name, email, password}`
+  → `201` with the created user (no hash) and an authenticated session
+  cookie.
+- **Validation**: server-side checks for required fields, email format,
+  password length, and confirm-password match; client-side validation
+  mirrors it for UX only.
+- **Storage**: user document contains name, email, and the password
+  hash — nothing else, no plaintext copy anywhere.
+
+### Day 16 Login Contract
+
+- **Page**: `/login` with Email and Password fields plus a visible link to
+  `/signup`.
+- **Endpoint**: `POST /auth/login` accepting `{email, password}` → `200` with
+  the user object (no hash) and an authenticated session cookie; ANY failure
+  (unknown email, wrong password, malformed body) → `401` with the single
+  generic message "Invalid email or password".
+- **Token**: A signed JWT containing the user's `user_id` (as `sub`) and an
+  expiry, stored in an HttpOnly, Secure, SameSite cookie. Tokens MUST NEVER
+  be stored in localStorage, sessionStorage, or returned in response bodies.
+- **Verification**: The submitted password MUST be checked with the hashing
+  library's comparison function against the stored bcrypt/argon2id hash.
+  Hand-written comparisons are forbidden.
+- **Post-login routing**: On success the user lands on their own
+  `/dashboard`. Every subsequent request carries the cookie and resolves to
+  exactly that user's data (see User Isolation Rules) — Hamza's dashboard,
+  messages, tasks, and connections contain ONLY Hamza's data.
+
+### Day 17 Route Protection Contract
+
+- **Session endpoint**: `GET /auth/me` returns `{id, name, email}` resolved
+  ONLY from the verified JWT cookie; missing, expired, or invalid tokens
+  return `401`. The frontend uses this endpoint as its single source of
+  truth for session state — it never decodes or trusts client-side token
+  data.
+- **Backend enforcement**: Every data endpoint (`/messages`, `/tasks`,
+  `/connections`, `/dashboard`, `/auth/me`, and all future endpoints) MUST
+  require a valid token through ONE shared FastAPI dependency/middleware.
+  An endpoint without the dependency does not ship.
+- **Frontend enforcement**: Next.js middleware redirects unauthenticated
+  visits to any protected page (`/dashboard`, `/inbox`, `/tasks`,
+  `/attention`, `/connections`, `/settings`) to `/login`; logged-in visits
+  to `/login` or `/signup` redirect to `/dashboard`.
+- **Public allowlist** (complete): `/login`, `/signup`, and backend health
+  checks. Everything else denies by default.
+- **No cosmetic-only protection**: Hiding links, buttons, or checking
+  storage in React is cosmetic. The server MUST independently enforce every
+  rule; the UI layer adds convenience, never authority.
+
+### Auth Pages UI/UX Principles
+
+Both `/login` and `/signup` share one visual system built on Tailwind CSS +
+shadcn/ui. They are the product's front door and MUST look intentional,
+modern, and professional.
+
+1. **Dark theme by default.** Deep neutral background, high-contrast text,
+   subtle card elevation; both pages use the identical palette.
+2. **One centered card layout.** Logo/title, short heading, form fields,
+   primary action, and a secondary link ("Create an account" / "Already
+   have an account?") in a vertically centered card of ~400px max width
+   with generous spacing.
+3. **Professional inputs.** Visible labels above fields, placeholder hints
+   inside them, password visibility toggle, focus rings, and disabled
+   states. Client-side validation mirrors server rules (email format,
+   8+ characters) for fast feedback, but the server remains authoritative.
+4. **One obvious primary button per page.** Full-width, high-contrast
+   ("Log in" / "Sign up"), showing a loading spinner while the request is
+   in flight; buttons are disabled during submission so requests cannot be
+   duplicated by double-clicks.
+5. **Honest errors, inline where possible.** Field-level messages for
+   validation issues; one banner-level message for credential failures
+   using the exact generic wording required by Password Handling Rules.
+   Raw exceptions, stack traces, and technical codes are never shown.
+6. **Consistency over decoration.** Both pages use identical fonts, radii,
+   spacing scale, and component variants. Decorative extras (illustrations,
+   animations) come only after the core flows pass the Quality Bar.
+
+### Quality Bar for Authentication
+
+- Registration works end-to-end: form → `POST /auth/register` → user
+  persisted with hashed password → session established.
+- Duplicate email signup is rejected with a clear, friendly error.
+- Short/weak passwords are rejected with a specific message.
+- Visiting any protected page while logged out redirects to `/login`.
+- Calling any protected API without a token returns 401.
+- The two-user isolation test passes (see User Isolation Rules).
+- Zero occurrences of plaintext passwords in code, logs, database, or
+  network responses.
+- Login and register flows show loading states and human-readable
+  errors; raw exceptions are never shown to users.
+- Valid credentials log the user in end-to-end: form → `POST /auth/login`
+  → JWT cookie set → redirect to their own `/dashboard` showing only
+  their data.
+- Invalid credentials show the generic error and never reveal whether
+  the email exists.
+- `GET /auth/me` with a valid cookie returns the session user; without a
+  cookie it returns 401.
+- Logged-in visits to `/login` or `/signup` redirect to `/dashboard`.
+- Login and signup pages render in dark theme with working loading,
+  focus, disabled, and password-visibility states, verified on desktop
+  and mobile widths.
+
 ## Technical Principles
 
 ### Frontend
@@ -586,5 +779,15 @@ Before merging any feature branch, verify:
 - [ ] Complete analysis persisted to MongoDB in one document; dashboard reads stored data only
 - [ ] NEEDS ATTENTION flags derive from agent signals and always include a "Why it matters" line
 - [ ] Reprocessing a message never creates duplicates
+- [ ] Every page and endpoint requires authentication except the public allowlist
+- [ ] All data queries filter by the authenticated user's `user_id` (user isolation)
+- [ ] Passwords are hashed with bcrypt/argon2id; never stored, logged, or returned in plaintext
+- [ ] Unauthenticated page access redirects to `/login`; unauthenticated API access returns 401
+- [ ] New collections define their ownership model before first write
+- [ ] `POST /auth/login` verifies the bcrypt/argon2id hash and issues a signed HttpOnly JWT cookie — tokens never appear in localStorage or response bodies
+- [ ] `GET /auth/me` resolves identity only from the verified session token and returns 401 without one
+- [ ] Every data endpoint enforces authentication through the shared server-side dependency/middleware (no unprotected endpoints)
+- [ ] Logged-in visits to `/login` or `/signup` redirect to `/dashboard`; logged-out visits to protected pages redirect to `/login`
+- [ ] Auth pages share one dark-theme design with loading, focus, disabled, and inline error states
 
-**Version**: 1.3.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-21
+**Version**: 1.5.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-24

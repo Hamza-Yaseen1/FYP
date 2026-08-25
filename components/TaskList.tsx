@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/time-ago";
+import { apiFetch } from "@/lib/api";
 
 interface Task {
   id: string;
@@ -28,8 +29,7 @@ export default function TaskList({ refreshKey }: { refreshKey?: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("http://localhost:8000/tasks")
-      .then((res) => res.json())
+    apiFetch<Task[]>("/tasks")
       .then((data) => {
         if (!cancelled) {
           setTasks(data);
@@ -44,16 +44,13 @@ export default function TaskList({ refreshKey }: { refreshKey?: number }) {
 
   const handleStatusChange = async (taskId: string, newStatus: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/tasks/${taskId}/status`, {
+      await apiFetch(`/tasks/${taskId}/status`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (res.ok) {
-        setTasks((prev) =>
-          prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
-        );
-      }
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
+      );
     } catch {
       // Error handled silently
     }

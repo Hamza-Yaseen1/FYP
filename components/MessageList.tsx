@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ArrowRight, Mail, MessageCircle, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import PriorityBadge from "@/components/PriorityBadge";
-import { timeAgo } from "@/lib/time-ago";
+import { useTimeAgo } from "@/lib/use-time-ago";
+import { apiFetch } from "@/lib/api";
 
 interface Message {
   id: string;
@@ -36,6 +38,11 @@ const sourceColors: Record<string, string> = {
   gmail: "bg-blue-500/15 text-blue-400 border-blue-500/20",
 };
 
+const sourceIcons: Record<string, typeof Mail> = {
+  whatsapp: MessageCircle,
+  gmail: Mail,
+};
+
 const priorityOrder: Record<string, number> = {
   urgent: 0,
   important: 1,
@@ -63,8 +70,7 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("http://localhost:8000/messages")
-      .then((res) => res.json())
+    apiFetch<Message[]>("/messages")
       .then((data) => {
         if (!cancelled) {
           setMessages(data);
@@ -81,12 +87,8 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
     if (!deleteId) return;
     setDeleting(true);
     try {
-      const res = await fetch(`http://localhost:8000/messages/${deleteId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setMessages((prev) => prev.filter((m) => m.id !== deleteId));
-      }
+      await apiFetch(`/messages/${deleteId}`, { method: "DELETE" });
+      setMessages((prev) => prev.filter((m) => m.id !== deleteId));
     } catch {
       // Error handled silently
     } finally {
@@ -119,77 +121,7 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
     <>
       <div className="space-y-3">
         {sortedMessages.map((msg) => (
-          <div
-            key={msg.id}
-            className="flex items-start gap-4 rounded-xl border bg-card p-4 transition-colors hover:border-white/10"
-          >
-            {/* Avatar */}
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
-              {msg.sender.charAt(0).toUpperCase()}
-            </div>
-
-            {/* Content */}
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-semibold">{msg.sender}</span>
-                <Badge
-                  variant="outline"
-                  className={`text-[10px] uppercase ${sourceColors[msg.source] ?? ""}`}
-                >
-                  {msg.source}
-                </Badge>
-                {msg.status === "unread" && (
-                  <Badge className="text-[10px] bg-blue-500/15 text-blue-400 border-blue-500/20">
-                    Unread
-                  </Badge>
-                )}
-                {msg.ai_analysis?.tasks_extracted && msg.ai_analysis.tasks_extracted.length > 0 && (
-                  <Badge className="text-[10px] bg-violet-500/15 text-violet-400 border-violet-500/20">
-                    {msg.ai_analysis.tasks_extracted.length} task{msg.ai_analysis.tasks_extracted.length !== 1 ? "s" : ""}
-                  </Badge>
-                )}
-                {msg.ai_analysis && (
-                  <PriorityBadge
-                    messageId={msg.id}
-                    priority={msg.ai_analysis.priority}
-                    confidence={msg.ai_analysis.confidence}
-                    explanation={msg.ai_analysis.explanation}
-                  />
-                )}
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
-                {msg.content}
-              </p>
-              {msg.ai_analysis?.summary && (
-                <p className="mt-2 text-xs text-muted-foreground/70 italic">
-                  {msg.ai_analysis.summary}
-                </p>
-              )}
-              {msg.ai_analysis?.recommended_action && (
-                <p className="mt-1 text-xs text-blue-400 italic">
-                  → {msg.ai_analysis.recommended_action}
-                </p>
-              )}
-            </div>
-
-            {/* Time + Delete */}
-            <div className="flex flex-col items-end gap-2">
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {timeAgo(msg.created_at)}
-              </span>
-              <button
-                onClick={() => setDeleteId(msg.id)}
-                className="text-muted-foreground/50 hover:text-red-500 transition-colors"
-                title="Delete message"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 6h18" />
-                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                </svg>
-              </button>
-            </div>
-          </div>
+          <MessageCard key={msg.id} message={msg} onDelete={() => setDeleteId(msg.id)} />
         ))}
       </div>
 
@@ -221,5 +153,116 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
         </div>
       )}
     </>
+  );
+}
+
+function MessageCard({
+  message: msg,
+  onDelete,
+}: {
+  message: Message;
+  onDelete: () => void;
+}) {
+  const timeLabel = useTimeAgo(msg.created_at);
+  const analysis = msg.ai_analysis;
+  const SourceIcon = sourceIcons[msg.source.toLowerCase()] ?? Mail;
+
+  return (
+    <article className="rounded-xl border bg-card p-4 transition-colors hover:border-white/10">
+      <div className="flex items-start gap-3">
+        {/* Avatar */}
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
+          {msg.sender.charAt(0).toUpperCase()}
+        </div>
+
+        {/* Content */}
+        <div className="min-w-0 flex-1">
+          {/* Sender + badges */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-sm font-semibold">{msg.sender}</span>
+            <Badge
+              variant="outline"
+              className={`gap-1 text-[10px] uppercase ${sourceColors[msg.source] ?? ""}`}
+            >
+              <SourceIcon className="size-3" aria-hidden />
+              {msg.source}
+            </Badge>
+            {msg.status === "unread" && (
+              <Badge className="text-[10px] bg-blue-500/15 text-blue-400 border-blue-500/20">
+                Unread
+              </Badge>
+            )}
+            {analysis?.tasks_extracted && analysis.tasks_extracted.length > 0 && (
+              <Badge className="text-[10px] bg-violet-500/15 text-violet-400 border-violet-500/20">
+                {analysis.tasks_extracted.length} task{analysis.tasks_extracted.length !== 1 ? "s" : ""}
+              </Badge>
+            )}
+          </div>
+
+          {/* Priority + confidence */}
+          {analysis && (
+            <div className="mt-1.5">
+              <PriorityBadge
+                messageId={msg.id}
+                priority={analysis.priority}
+                confidence={analysis.confidence}
+                explanation={analysis.explanation}
+              />
+            </div>
+          )}
+
+          {/* Original message */}
+          <p className="mt-2 text-sm leading-relaxed text-foreground/90 line-clamp-2">
+            {msg.content}
+          </p>
+
+          {/* AI analysis */}
+          {(analysis?.summary || analysis?.recommended_action) && (
+            <div className="mt-3 space-y-2.5 border-t pt-3">
+              {analysis.summary && (
+                <div>
+                  <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                    <Sparkles className="size-3" aria-hidden />
+                    Summary
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {analysis.summary}
+                  </p>
+                </div>
+              )}
+              {analysis.recommended_action && (
+                <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.07] p-3">
+                  <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-blue-400">
+                    <ArrowRight className="size-3" aria-hidden />
+                    Recommended Action
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-blue-100/90">
+                    {analysis.recommended_action}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Time + Delete */}
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <span className="whitespace-nowrap text-xs text-muted-foreground">
+            {timeLabel}
+          </span>
+          <button
+            onClick={onDelete}
+            className="text-muted-foreground/50 hover:text-red-500 transition-colors"
+            title="Delete message"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18" />
+              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </article>
   );
 }

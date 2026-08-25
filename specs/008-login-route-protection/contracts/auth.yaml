@@ -1,0 +1,106 @@
+openapi: 3.0.3
+info:
+  title: Communication AI - Auth Surface (as-built contract)
+  version: 1.0.0
+  description: >
+    Capability contract for feature 008-login-route-protection. Documents
+    the EXISTING auth endpoints that the restyled UI consumes. Behavior is
+    frozen except where the verification audit finds a spec violation.
+servers:
+  - url: http://localhost:8000
+paths:
+  /auth/register:
+    post:
+      summary: Create account and start session (Day 15, unchanged)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string, minLength: 1 }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        "201":
+          description: Account created; session cookie set; user returned
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                description: cai_token=...; HttpOnly; SameSite=Lax; Max-Age=604800
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "409": { description: Email already registered }
+        "422": { description: Validation error (field-specific detail) }
+  /auth/login:
+    post:
+      summary: Verify credentials and start session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Session established; user returned (no secret material)
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                description: cai_token JWT; HttpOnly; SameSite=Lax; 7-day max-age
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          description: >
+            Unknown email OR wrong password OR malformed body — identical
+            generic detail "Invalid email or password." (no enumeration)
+      notes: >
+        Response body and error body never contain password hashes or the
+        raw token.
+  /auth/me:
+    get:
+      summary: Current user identity from verified session only
+      responses:
+        "200":
+          description: Authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401": { description: Missing/expired/invalid/tampered credential }
+  /auth/logout:
+    post:
+      summary: End session (clears cookie)
+      responses:
+        "204": { description: Cookie deleted; client redirects to /login }
+        "401": { description: No valid session to end }
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: cai_token
+  schemas:
+    UserResponse:
+      type: object
+      properties:
+        id: { type: string, description: user id (ObjectId string) }
+        name: { type: string }
+        email: { type: string }
+      required: [id, name, email]
+security:
+  - cookieAuth: []

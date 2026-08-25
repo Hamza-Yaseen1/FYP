@@ -4,3 +4,10 @@ pydantic
 motor
 python-dotenv
 groq
+bcrypt
+PyJWT
+email-validator
+
+# dev/test
+pytest
+httpx
