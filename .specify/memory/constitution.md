@@ -1,23 +1,23 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.5.0 → 1.6.0 (MINOR: new Day 18 User Isolation Contract
-section added, User Isolation Rules strengthened, Compliance Checklist
-expanded with 6 isolation-specific checks)
+Version change: 1.6.0 → 1.7.0 (MINOR: new Day 19 Connection Architecture
+section added covering token security, user isolation for connections,
+frontend/backend display rules, connection status contract, quality bar)
 Modified principles:
-  - User Isolation Rules (5 rules strengthened to 11 with explicit
-    data ownership, query filtering, 404 semantics, and verification)
+  - None existing principles modified
 Added sections:
-  - Day 18 User Isolation Contract (purpose, core privacy principles,
-    strict data ownership rules, what must never happen, quality bar)
+  - Day 19 Connection Architecture (purpose, security principles for
+    token storage, user isolation for connections, frontend vs backend
+    display rules, connection status contract, quality bar)
 Removed sections: N/A
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ no changes needed
     (Constitution Check gates derive from constitution file)
   - .specify/templates/spec-template.md ✅ no changes needed
-    (requirements format compatible with isolation constraints)
+    (requirements format compatible with connection constraints)
   - .specify/templates/tasks-template.md ✅ no changes needed
-    (task structure compatible; isolation tests follow standard patterns)
+    (task structure compatible; connection tasks follow standard patterns)
   - .specify/templates/commands/*.md ✅ N/A — no command templates exist
 Follow-up TODOs: None
 -->
@@ -749,6 +749,118 @@ security failure that blocks release:
   ownership model documented (field name, source, query requirement)
   before it ships. Un documented collections block merge.
 
+### Day 19 Connection Architecture
+
+This section defines the rules for connecting external communication
+accounts (WhatsApp, Gmail, LinkedIn, etc.) to the system. It extends
+Principle IV (User Control), Principle V (Security and Privacy), and
+the User Isolation Rules. Connections are the bridge between external
+platforms and the AI pipeline.
+
+#### Purpose of Connections
+
+The Connections feature allows users to link external communication
+accounts so the system can receive and process messages from multiple
+channels. Users MUST be able to view connection status, connect new
+providers, and disconnect existing ones. The system MUST guarantee that
+each user's connections and associated credentials are completely isolated
+from all other users.
+
+**Success means**: A user connects their WhatsApp account. The system
+receives messages from that account, processes them through the AI
+pipeline, and displays results on the dashboard. No other user can see,
+use, or detect this connection.
+
+#### Security Principles for Token Storage
+
+1. **Encrypted at rest.** All access tokens and refresh tokens MUST be
+   encrypted before storage using AES-256 or equivalent. Plaintext
+   tokens MUST NEVER be stored in the database.
+2. **Never exposed to frontend.** Tokens (access, refresh, or any
+   credential) MUST NEVER be returned in API responses, stored in
+   client-side state, or visible in browser developer tools.
+3. **Environment-based encryption keys.** Encryption keys MUST be stored
+   in environment variables, never in code or database. Key rotation
+   MUST be supported.
+4. **Backend-only token operations.** Token refresh, validation, and API
+   calls using stored tokens MUST happen exclusively on the backend.
+   The frontend never handles tokens directly.
+5. **Audit trail for token access.** Every token read or write operation
+   MUST be logged with the user_id, timestamp, and operation type for
+   security monitoring.
+
+#### User Isolation for Connections
+
+Every connection belongs to exactly one user. The same isolation rules
+that apply to messages and tasks extend to connections:
+
+1. Every connection document MUST carry a `user_id` field set server-side
+   from the verified JWT.
+2. Every database query for connections MUST filter by the authenticated
+   user's `user_id` as the first condition.
+3. Requests for another user's connection MUST return 404 with no
+   distinction between "not found" and "not yours."
+4. Connection deletion MUST only remove the authenticated user's
+   connection — never affect other users' connections.
+5. The system MUST NOT allow users to see, modify, or detect connections
+   belonging to other users.
+
+#### Frontend vs Backend Display Rules
+
+**What the frontend MAY show:**
+
+- Provider name (WhatsApp, Gmail, LinkedIn)
+- Connection status (Connected, Disconnected, Error)
+- Connect/Disconnect buttons
+- Provider logo/icon
+- "Coming Soon" label for unavailable providers
+
+**What MUST stay in backend only:**
+
+- Access tokens
+- Refresh tokens
+- OAuth state/authorization codes
+- Token expiry timestamps
+- Provider-specific credentials
+- Any raw API responses containing credentials
+
+The frontend communicates with the backend through API endpoints that
+return only the safe fields listed above. The `connections` collection
+in MongoDB stores all credential fields; the API response DTO MUST
+exclude them.
+
+#### Connection Status Contract
+
+The `connections` collection stores these fields:
+
+| Field | Type | Source | Visible to Frontend |
+|---|---|---|---|
+| `user_id` | string | Server (JWT) | No (implicit) |
+| `provider` | string | Server (validated) | Yes |
+| `status` | string | Server (computed) | Yes |
+| `accessToken` | string | Server (encrypted) | No |
+| `refreshToken` | string | Server (encrypted) | No |
+| `createdAt` | datetime | Server (auto) | No |
+
+Status values: `connected`, `disconnected`, `error`, `coming_soon`.
+
+#### Quality Bar for Connection Architecture
+
+- **Token encryption**: 100% of tokens encrypted at rest; zero plaintext
+  tokens in database.
+- **Frontend isolation**: Zero tokens, credentials, or raw OAuth data
+  visible in API responses, browser storage, or developer tools.
+- **User isolation**: Two-user isolation test passes for connections —
+  User A sees only A's connections; User B sees only B's connections.
+- **404 semantics**: Requesting another user's connection by ID returns
+  404 with identical response to non-existent resource.
+- **Connection lifecycle**: Connect → status "Connected" → Disconnect →
+  status "Disconnected" works end-to-end for each provider.
+- **Error handling**: Failed connections show user-friendly error
+  messages; raw exceptions never shown.
+- **Token refresh**: Backend successfully refreshes expired tokens
+  without user intervention; frontend remains unaware of token lifecycle.
+
 ### Auth Pages UI/UX Principles
 
 Both `/login` and `/signup` share one visual system built on Tailwind CSS +
@@ -959,5 +1071,11 @@ Before merging any feature branch, verify:
 - [ ] API responses never contain any field, ID, name, or content from another user
 - [ ] Logout clears all client state; the next user's session shows no stale data from the previous user
 - [ ] New collections have a documented ownership model (field name, source, query requirement) before merge
+- [ ] Connection tokens (access, refresh) are encrypted at rest using AES-256 or equivalent
+- [ ] No tokens, credentials, or OAuth data appear in API responses, browser storage, or developer tools
+- [ ] Connection queries filter by authenticated user's `user_id` as first condition
+- [ ] Requesting another user's connection by ID returns 404 identical to non-existent resource
+- [ ] Connection status contract is documented (user_id, provider, status, accessToken, refreshToken, createdAt)
+- [ ] Frontend only shows provider, status, and connect/disconnect buttons — no credential fields
 
-**Version**: 1.6.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-25
+**Version**: 1.7.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-25

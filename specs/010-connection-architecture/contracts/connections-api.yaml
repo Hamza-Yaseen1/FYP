@@ -1,0 +1,180 @@
+openapi: 3.0.3
+info:
+  title: Connection Architecture API
+  description: API for managing external communication connections (WhatsApp, Gmail, LinkedIn)
+  version: 1.0.0
+
+paths:
+  /connections:
+    get:
+      summary: List user's connections
+      description: Returns all connections for the authenticated user
+      tags:
+        - connections
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connections:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConnectionResponse'
+        '401':
+          description: Unauthorized - no valid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create a new connection
+      description: Initiates connection to an external provider
+      tags:
+        - connections
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConnectionRequest'
+      responses:
+        '201':
+          description: Connection created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionResponse'
+        '400':
+          description: Invalid request (invalid provider, already connected)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - no valid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /connections/{connectionId}:
+    delete:
+      summary: Disconnect a connection
+      description: Removes a connection and invalidates tokens
+      tags:
+        - connections
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: connectionId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Connection ID
+      responses:
+        '204':
+          description: Connection deleted successfully
+        '404':
+          description: Connection not found (or belongs to another user)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - no valid session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session_token
+      description: JWT session token stored in HttpOnly cookie
+
+  schemas:
+    ConnectionResponse:
+      type: object
+      description: Connection data safe for frontend display
+      properties:
+        id:
+          type: string
+          description: Connection ID
+        provider:
+          type: string
+          enum:
+            - whatsapp
+            - gmail
+            - linkedin
+          description: Provider name
+        status:
+          type: string
+          enum:
+            - connected
+            - disconnected
+            - error
+            - coming_soon
+          description: Connection status
+        createdAt:
+          type: string
+          format: date-time
+          description: Connection creation timestamp
+      required:
+        - id
+        - provider
+        - status
+        - createdAt
+
+    CreateConnectionRequest:
+      type: object
+      description: Request to create a new connection
+      properties:
+        provider:
+          type: string
+          enum:
+            - whatsapp
+            - gmail
+          description: Provider to connect (linkedin not supported yet)
+      required:
+        - provider
+
+    ErrorResponse:
+      type: object
+      description: Error response
+      properties:
+        error:
+          type: string
+          description: Error message
+        detail:
+          type: string
+          description: Optional error details
+      required:
+        - error
+
+  examples:
+    ConnectionResponse:
+      value:
+        id: "507f1f77bcf86cd799439011"
+        provider: "whatsapp"
+        status: "connected"
+        createdAt: "2026-08-25T10:30:00Z"
+
+    CreateConnectionRequest:
+      value:
+        provider: "whatsapp"
+
+    ErrorResponse:
+      value:
+        error: "This account is already connected"

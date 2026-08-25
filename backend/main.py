@@ -5,11 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import logging
 
-from database import users_collection, messages_collection, tasks_collection
+from database import users_collection, messages_collection, tasks_collection, connections_collection
 from routes.auth import router as auth_router
 from routes.messages import router as messages_router
 from routes.webhooks import router as webhooks_router
 from routes.tasks import router as tasks_router
+from routes.connections import router as connections_router
 
 load_dotenv()
 
@@ -24,6 +25,11 @@ async def lifespan(app: FastAPI):
     await users_collection.create_index("email", unique=True)
     await messages_collection.create_index([("user_id", 1), ("created_at", -1)])
     await tasks_collection.create_index([("user_id", 1), ("created_at", -1)])
+    await connections_collection.create_index(
+        [("user_id", 1), ("provider", 1)],
+        unique=True
+    )
+    await connections_collection.create_index([("user_id", 1)])
     yield
 
 
@@ -50,3 +56,4 @@ app.include_router(auth_router)
 app.include_router(messages_router)
 app.include_router(webhooks_router)
 app.include_router(tasks_router)
+app.include_router(connections_router)
