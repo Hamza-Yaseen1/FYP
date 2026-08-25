@@ -1,23 +1,22 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.6.0 → 1.7.0 (MINOR: new Day 19 Connection Architecture
-section added covering token security, user isolation for connections,
-frontend/backend display rules, connection status contract, quality bar)
+Version change: 1.7.0 → 1.8.0 (MINOR: new Day 20 Better Inbox section
+added covering priority-based filtering, source filtering, search
+capabilities, message display rules, user isolation for inbox, quality bar)
 Modified principles:
   - None existing principles modified
 Added sections:
-  - Day 19 Connection Architecture (purpose, security principles for
-    token storage, user isolation for connections, frontend vs backend
-    display rules, connection status contract, quality bar)
+  - Day 20 Better Inbox (purpose, core filtering principles, user
+    capabilities, message display rules, quality bar)
 Removed sections: N/A
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ no changes needed
     (Constitution Check gates derive from constitution file)
   - .specify/templates/spec-template.md ✅ no changes needed
-    (requirements format compatible with connection constraints)
+    (requirements format compatible with inbox constraints)
   - .specify/templates/tasks-template.md ✅ no changes needed
-    (task structure compatible; connection tasks follow standard patterns)
+    (task structure compatible; inbox tasks follow standard patterns)
   - .specify/templates/commands/*.md ✅ N/A — no command templates exist
 Follow-up TODOs: None
 -->
@@ -861,6 +860,92 @@ Status values: `connected`, `disconnected`, `error`, `coming_soon`.
 - **Token refresh**: Backend successfully refreshes expired tokens
   without user intervention; frontend remains unaware of token lifecycle.
 
+### Day 20 Better Inbox
+
+This section defines the rules for improving the Inbox page with clear
+filters, search, and sorting. It extends Principle II (Vertical Slices),
+Principle IV (User Control), and the User Isolation Rules from Day 18.
+The Better Inbox transforms a basic message list into a powerful,
+filterable interface that helps users quickly find and prioritize messages.
+
+#### Purpose of Better Inbox
+
+The Better Inbox transforms the basic message list into a powerful,
+filterable interface that helps users quickly find and prioritize messages.
+Users MUST be able to filter by priority levels (All, Urgent, Important,
+Normal, Unread) and by source (WhatsApp, Gmail, etc.), search across
+messages, and sort by date and sender.
+
+**Success means**: A user opens the Inbox and can immediately find the
+messages they need to act on, regardless of how many messages exist.
+Filtering and searching are fast, accurate, and intuitive.
+
+#### Core Filtering Principles
+
+1. **Priority-based tabs are primary.** The inbox MUST display tabs for
+   All, Urgent, Important, Normal, and Unread messages. These are the
+   primary navigation mechanism.
+2. **Source filtering is secondary.** Users MUST be able to filter by
+   communication source (WhatsApp, Gmail, LinkedIn, etc.) in addition
+   to priority tabs.
+3. **Search is universal.** The search bar MUST search across all message
+   fields: content, sender, subject, and any extracted metadata.
+4. **Filters compose.** Priority tabs and source filters MUST work
+   together. Selecting "Urgent" tab + "WhatsApp" source shows only
+   urgent WhatsApp messages.
+5. **Clear visual feedback.** Active filters MUST be clearly indicated.
+   Users MUST know exactly what view they're looking at.
+6. **One-click reset.** Users MUST be able to clear all filters and
+   return to the default view with a single action.
+
+#### User Capabilities
+
+Users MUST be able to:
+- **Switch between priority tabs** (All, Urgent, Important, Normal,
+  Unread) with one click
+- **Filter by source** (WhatsApp, Gmail, LinkedIn, etc.) using a
+  dropdown or multi-select
+- **Search messages** using the "Search communications..." search bar
+- **Sort by date** (newest first, oldest first)
+- **Sort by sender** (alphabetical)
+- **Combine filters** (e.g., "Urgent" + "WhatsApp" + "from Ali")
+- **See filter counts** (number of messages in each tab/filter)
+- **Clear all filters** with one action
+- **View message details** by clicking on a message card
+
+#### Message Display Rules
+
+Every message in the inbox MUST:
+1. **Belong to the current user.** Only messages with the authenticated
+   user's `user_id` are shown. This extends the User Isolation Rules
+   from Day 18.
+2. **Show essential fields:** sender, source, subject/preview, timestamp,
+   priority badge, unread indicator
+3. **Respect priority classification.** The priority badge (Urgent,
+   Important, Normal) MUST match the AI pipeline's classification
+4. **Preserve original data.** Sender names, timestamps, and content
+   come from the stored message — never fabricated
+5. **Handle missing data gracefully.** If a field is missing (e.g., no
+   subject), omit it cleanly — never show "null", "undefined", or
+   blank space
+
+#### Quality Bar for Better Inbox
+
+- **Filter accuracy**: 100% — selecting "Urgent" shows ONLY messages
+  classified as Urgent
+- **Search accuracy**: Search results MUST match the query in sender,
+  subject, or content fields
+- **Performance**: Filtering and search MUST complete in under 200ms
+  for up to 1000 messages
+- **User isolation**: Two-user isolation test passes — User A sees only
+  A's messages in inbox; User B sees only B's messages
+- **Empty states**: When no messages match filters, show a clear
+  "No messages found" state
+- **Loading states**: Show skeleton loaders during initial load; filters
+  apply instantly without loading states
+- **Responsive design**: Inbox MUST work on desktop and mobile widths
+- **Accessibility**: Filter tabs and search bar MUST be keyboard navigable
+
 ### Auth Pages UI/UX Principles
 
 Both `/login` and `/signup` share one visual system built on Tailwind CSS +
@@ -1077,5 +1162,16 @@ Before merging any feature branch, verify:
 - [ ] Requesting another user's connection by ID returns 404 identical to non-existent resource
 - [ ] Connection status contract is documented (user_id, provider, status, accessToken, refreshToken, createdAt)
 - [ ] Frontend only shows provider, status, and connect/disconnect buttons — no credential fields
+- [ ] Inbox displays only messages belonging to the authenticated user (user isolation)
+- [ ] Priority tabs (All, Urgent, Important, Normal, Unread) filter correctly
+- [ ] Source filtering works in combination with priority tabs
+- [ ] Search bar searches across sender, subject, and content fields
+- [ ] Active filters are clearly indicated with visual feedback
+- [ ] One-click reset clears all filters and returns to default view
+- [ ] Filter counts show accurate numbers for each tab/filter
+- [ ] Empty states display "No messages found" when no messages match filters
+- [ ] Loading states show skeleton loaders during initial load
+- [ ] Inbox works responsively on desktop and mobile widths
+- [ ] Filter tabs and search bar are keyboard navigable
 
-**Version**: 1.7.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-25
+**Version**: 1.8.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-26

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from bson import ObjectId
+from typing import Optional
 
 from database import messages_collection
 from dependencies import get_current_user
@@ -40,12 +41,151 @@ async def create_message(
     return message_doc_to_response(doc)
 
 
-@router.get("", response_model=list[MessageResponse])
-async def get_messages(current_user: dict = Depends(get_current_user)):
+@router.get("")
+async def get_messages(
+    current_user: dict = Depends(get_current_user),
+    tab: Optional[str] = Query(None, description="Filter by tab: all, urgent, important, normal, unread"),
+    source: Optional[str] = Query(None, description="Filter by source"),
+    priority: Optional[str] = Query(None, description="Filter by priority: urgent, important, normal, low"),
+    start_date: Optional[str] = Query(None, description="Filter messages from this date (ISO format)"),
+    end_date: Optional[str] = Query(None, description="Filter messages up to this date (ISO format)"),
+    sender: Optional[str] = Query(None, description="Filter by sender"),
+    search: Optional[str] = Query(None, description="Search across sender, content, and summary"),
+    limit: int = Query(100, ge=1, le=200, description="Maximum messages to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+):
     uid = str(current_user["_id"])
-    cursor = messages_collection.find({"user_id": uid}).sort("created_at", -1)
-    docs = await cursor.to_list(length=100)
-    return [message_doc_to_response(doc) for doc in docs]
+    query = {"user_id": uid}
+
+    # Tab filter
+    if tab and tab != "all":
+        if tab == "unread":
+            query["status"] = "unread"
+        elif tab in ["urgent", "important", "normal"]:
+            query["ai_analysis.priority"] = tab
+
+    # Source filter
+    if source:
+        query["source"] = source
+
+    # Priority filter
+    if priority:
+        query["ai_analysis.priority"] = priority
+
+    # Date range filter
+    if start_date or end_date:
+        created_at_filter = {}
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+                created_at_filter["$gte"] = start_dt
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid start_date format")
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                created_at_filter["$lte"] = end_dt
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid end_date format")
+        if "$gte" in created_at_filter and "$lte" in created_at_filter:
+            if created_at_filter["$gte"] > created_at_filter["$lte"]:
+                raise HTTPException(status_code=400, detail="Invalid date range: start_date must be before end_date")
+        query["created_at"] = created_at_filter
+
+    # Sender filter
+    if sender:
+        query["sender"] = sender
+
+    # Search filter - use regex for flexible partial matching
+    if search:
+        # Use case-insensitive regex for better user experience
+        # This allows partial matches in sender, content, and summary
+        query["$or"] = [
+            {"sender": {"$regex": search, "$options": "i"}},
+            {"content": {"$regex": search, "$options": "i"}},
+            {"ai_analysis.summary": {"$regex": search, "$options": "i"}},
+        ]
+
+    # Get total count
+    total = await messages_collection.count_documents(query)
+
+    # Get messages with pagination
+    cursor = messages_collection.find(query).sort("created_at", -1).skip(offset).limit(limit)
+    docs = await cursor.to_list(length=limit)
+
+    return {
+        "messages": [message_doc_to_response(doc) for doc in docs],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/counts")
+async def get_filter_counts(current_user: dict = Depends(get_current_user)):
+    uid = str(current_user["_id"])
+    base_query = {"user_id": uid}
+
+    # Get tab counts
+    all_count = await messages_collection.count_documents(base_query)
+    urgent_count = await messages_collection.count_documents({**base_query, "ai_analysis.priority": "urgent"})
+    important_count = await messages_collection.count_documents({**base_query, "ai_analysis.priority": "important"})
+    normal_count = await messages_collection.count_documents({**base_query, "ai_analysis.priority": "normal"})
+    unread_count = await messages_collection.count_documents({**base_query, "status": "unread"})
+
+    # Get source counts
+    source_pipeline = [
+        {"$match": base_query},
+        {"$group": {"_id": "$source", "count": {"$sum": 1}}},
+    ]
+    source_results = await messages_collection.aggregate(source_pipeline).to_list(length=100)
+    sources = {r["_id"]: r["count"] for r in source_results if r["_id"]}
+
+    # Get priority counts
+    priority_pipeline = [
+        {"$match": base_query},
+        {"$group": {"_id": "$ai_analysis.priority", "count": {"$sum": 1}}},
+    ]
+    priority_results = await messages_collection.aggregate(priority_pipeline).to_list(length=100)
+    priorities = {r["_id"]: r["count"] for r in priority_results if r["_id"]}
+
+    return {
+        "tabs": {
+            "all": all_count,
+            "urgent": urgent_count,
+            "important": important_count,
+            "normal": normal_count,
+            "unread": unread_count,
+        },
+        "sources": sources,
+        "priorities": priorities,
+    }
+
+
+@router.get("/senders")
+async def get_unique_senders(current_user: dict = Depends(get_current_user)):
+    uid = str(current_user["_id"])
+    pipeline = [
+        {"$match": {"user_id": uid}},
+        {"$group": {"_id": "$sender", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+    ]
+    results = await messages_collection.aggregate(pipeline).to_list(length=100)
+    senders = [{"name": r["_id"], "count": r["count"]} for r in results if r["_id"]]
+    return {"senders": senders}
+
+
+@router.get("/sources")
+async def get_unique_sources(current_user: dict = Depends(get_current_user)):
+    uid = str(current_user["_id"])
+    pipeline = [
+        {"$match": {"user_id": uid}},
+        {"$group": {"_id": "$source", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+    ]
+    results = await messages_collection.aggregate(pipeline).to_list(length=100)
+    sources = [{"name": r["_id"], "count": r["count"]} for r in results if r["_id"]]
+    return {"sources": sources}
 
 
 @router.get("/{message_id}", response_model=MessageResponse)

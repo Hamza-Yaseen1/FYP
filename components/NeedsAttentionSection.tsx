@@ -37,10 +37,10 @@ export default function NeedsAttentionSection({
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<AttentionMessage[]>("/messages")
+    apiFetch<{ messages: AttentionMessage[]; total: number; limit: number; offset: number }>("/messages")
       .then((data) => {
         if (!cancelled) {
-          setMessages(Array.isArray(data) ? data : []);
+          setMessages(data.messages || []);
           setLoaded(true);
         }
       })

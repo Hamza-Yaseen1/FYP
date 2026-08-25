@@ -70,10 +70,10 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<Message[]>("/messages")
+    apiFetch<{ messages: Message[]; total: number; limit: number; offset: number }>("/messages")
       .then((data) => {
         if (!cancelled) {
-          setMessages(data);
+          setMessages(data.messages || []);
           setLoading(false);
         }
       })

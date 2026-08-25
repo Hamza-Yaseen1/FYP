@@ -163,7 +163,7 @@ Once the backend is running, visit:
 | Login | `/login` | User authentication |
 | Signup | `/signup` | New user registration |
 | Dashboard | `/dashboard` | Main overview |
-| Inbox | `/inbox` | Message management |
+| Inbox | `/inbox` | Filterable message management with priority tabs and search |
 | Tasks | `/tasks` | Task tracking |
 | Attention | `/attention` | Priority items |
 | Connections | `/connections` | Contact management |
