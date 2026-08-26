@@ -20,3 +20,5 @@ class TaskResponse(BaseModel):
     source_message_id: str
     source_message_preview: str
     created_at: datetime
+    updated_at: Optional[datetime] = None
+    snoozed_until: Optional[datetime] = None

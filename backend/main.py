@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import logging
 
-from database import users_collection, messages_collection, tasks_collection, connections_collection
+from database import users_collection, messages_collection, tasks_collection, connections_collection, create_indexes
 from routes.auth import router as auth_router
 from routes.messages import router as messages_router
 from routes.webhooks import router as webhooks_router
@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI):
         unique=True
     )
     await connections_collection.create_index([("user_id", 1)])
+    await create_indexes()
     yield
 
 

@@ -1,22 +1,22 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.7.0 → 1.8.0 (MINOR: new Day 20 Better Inbox section
-added covering priority-based filtering, source filtering, search
-capabilities, message display rules, user isolation for inbox, quality bar)
+Version change: 1.8.0 → 1.9.0 (MINOR: new Day 21 Task Management section
+added covering task display rules, action rules (Complete, Snooze, View),
+user isolation for tasks, quality bar)
 Modified principles:
   - None existing principles modified
 Added sections:
-  - Day 20 Better Inbox (purpose, core filtering principles, user
-    capabilities, message display rules, quality bar)
+  - Day 21 Task Management (purpose, core task management principles,
+    task display rules, task action rules, quality bar)
 Removed sections: N/A
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ no changes needed
     (Constitution Check gates derive from constitution file)
   - .specify/templates/spec-template.md ✅ no changes needed
-    (requirements format compatible with inbox constraints)
+    (requirements format compatible with task management constraints)
   - .specify/templates/tasks-template.md ✅ no changes needed
-    (task structure compatible; inbox tasks follow standard patterns)
+    (task structure compatible; task management tasks follow standard patterns)
   - .specify/templates/commands/*.md ✅ N/A — no command templates exist
 Follow-up TODOs: None
 -->
@@ -946,6 +946,96 @@ Every message in the inbox MUST:
 - **Responsive design**: Inbox MUST work on desktop and mobile widths
 - **Accessibility**: Filter tabs and search bar MUST be keyboard navigable
 
+### Day 21 Task Management
+
+This section defines the rules for building a clean "My Tasks" page that
+shows extracted tasks clearly. It extends Principle I (Simplicity First),
+Principle II (Vertical Slices), and the Task Extraction guidance from the
+AI Feature Guidance section. The Task Management page transforms task
+extraction results into a focused, actionable task list.
+
+#### Purpose of Task Management
+
+The Task Management page provides a clean, focused view of all extracted
+tasks. Users MUST be able to see their tasks organized by urgency with
+clear action options. The page transforms AI-extracted tasks into a
+simple, actionable list that helps users act on what matters.
+
+**Success means**: A user opens the Tasks page and immediately sees their
+tasks organized by priority, with clear options to complete, snooze, or
+view the source message for each task.
+
+#### Core Task Management Principles
+
+1. **Tasks are extracted, not invented.** Every task displayed MUST come
+   from the Task Extraction agent's output stored in MongoDB. The system
+   MUST NOT create, modify, or prioritize tasks beyond what the AI
+   extracted from the original message.
+2. **Clarity over complexity.** The task list MUST show only essential
+   information: task description, deadline, and priority indicator. No
+   hidden states, no complex workflows, no unnecessary metadata.
+3. **Actionable by default.** Every task MUST have clear action options
+   available. Users can complete, snooze, or view the source message for
+   any task without navigating away from the page.
+4. **Urgency drives organization.** Tasks MUST be organized by urgency
+   with visual indicators: 🔴 for urgent, 🟡 for important, 🟢 for normal.
+   Users MUST see urgent tasks first.
+5. **Simplicity in interaction.** Task actions (Complete, Snooze, View)
+   MUST be one-click operations. No confirmation dialogs, no complex
+   forms, no multi-step processes.
+
+#### Task Display Rules
+
+Every task in the "My Tasks" page MUST:
+
+1. **Belong to the current user.** Only tasks with the authenticated
+   user's `user_id` are shown. This extends the User Isolation Rules
+   from Day 18.
+2. **Show essential fields:** task description, deadline (if any), and
+   priority indicator (🔴, 🟡, 🟢)
+3. **Respect priority classification.** The priority indicator MUST match
+   the AI pipeline's classification from Task Extraction.
+4. **Preserve original wording.** Task descriptions and deadlines come
+   from the AI extraction — never fabricated or modified.
+5. **Handle missing data gracefully.** If a deadline is missing, omit it
+   cleanly — never show "null", "undefined", or blank space.
+
+#### Task Action Rules
+
+**Complete Action:**
+- MUST mark the task as completed in the database
+- MUST remove the task from the active task list
+- MUST show a brief visual confirmation (e.g., task disappears with subtle animation)
+- MUST NOT delete the task permanently — it can be accessed in task history if needed
+
+**Snooze Action:**
+- MUST allow users to snooze tasks for a defined period (e.g., 1 hour, tomorrow, next week)
+- MUST update the task's deadline to the snoozed time
+- MUST keep the task in the active list until the new deadline passes
+- MUST show the updated deadline after snoozing
+
+**View Message Action:**
+- MUST navigate to or display the original message that triggered the task extraction
+- MUST show the message in context (sender, source, timestamp, content)
+- MUST allow users to return to the task list easily
+- MUST NOT lose the user's position in the task list
+
+#### Quality Bar for Task Management
+
+- **Accuracy**: 100% — every task displayed MUST correspond to a real
+  extracted task in MongoDB; no fabricated tasks
+- **User isolation**: Two-user isolation test passes — User A sees only
+  A's tasks; User B sees only B's tasks
+- **Performance**: Task list loads in under 1 second for up to 100 tasks
+- **Action reliability**: 100% — Complete, Snooze, and View actions MUST
+  work as specified; no silent failures
+- **Empty states**: When no tasks exist, show a clear "No tasks found"
+  state with helpful guidance
+- **Loading states**: Show skeleton loaders during initial load; actions
+  apply instantly without loading states
+- **Responsive design**: Task list MUST work on desktop and mobile widths
+- **Accessibility**: Task actions MUST be keyboard navigable
+
 ### Auth Pages UI/UX Principles
 
 Both `/login` and `/signup` share one visual system built on Tailwind CSS +
@@ -1173,5 +1263,16 @@ Before merging any feature branch, verify:
 - [ ] Loading states show skeleton loaders during initial load
 - [ ] Inbox works responsively on desktop and mobile widths
 - [ ] Filter tabs and search bar are keyboard navigable
+- [ ] Tasks page displays only tasks belonging to the authenticated user (user isolation)
+- [ ] Task priority indicators (🔴, 🟡, 🟢) match AI pipeline classification
+- [ ] Task descriptions and deadlines preserve original AI extraction wording
+- [ ] Complete action marks task as completed and removes from active list
+- [ ] Snooze action updates task deadline and keeps task in active list
+- [ ] View message action navigates to original source message
+- [ ] Task actions are one-click operations without confirmation dialogs
+- [ ] Empty tasks state shows "No tasks found" with helpful guidance
+- [ ] Task list loads in under 1 second for up to 100 tasks
+- [ ] Task list works responsively on desktop and mobile widths
+- [ ] Task actions are keyboard navigable
 
-**Version**: 1.8.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-26
+**Version**: 1.9.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-26

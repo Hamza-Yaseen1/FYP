@@ -16,3 +16,9 @@ users_collection = db["users"]
 ai_analysis_collection = db["ai_analysis"]
 tasks_collection = db["tasks"]
 connections_collection = db["connections"]
+
+# Indexes
+async def create_indexes():
+    # Tasks indexes for priority-based sorting and snooze queries
+    await tasks_collection.create_index([("user_id", 1), ("priority_indicator", 1), ("created_at", -1)])
+    await tasks_collection.create_index([("user_id", 1), ("snoozed_until", 1)])
