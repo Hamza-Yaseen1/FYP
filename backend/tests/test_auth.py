@@ -199,7 +199,9 @@ class TestIsolation:
 
         listing = client.get("/messages")
         assert listing.status_code == 200
-        assert all(m["id"] != msg_a_id for m in listing.json())
+        assert all(
+            m["id"] != msg_a_id for m in listing.json()["messages"]
+        )
 
         assert client.get(f"/messages/{msg_a_id}").status_code == 404
         assert client.put(f"/messages/{msg_a_id}", json={"status": "read"}).status_code == 404
@@ -252,14 +254,14 @@ class TestIsolation:
         oid = "507f1f77bcf86cd799439011"
         assert (
             client.put(f"/tasks/{oid}/status", json={"status": "completed"}).status_code
-            == 401
+== 401
         )
         assert client.delete(f"/tasks/{oid}").status_code == 401
         assert (
             client.post(
                 "/webhooks/whatsapp", json={"sender": "s", "message": "m"}
             ).status_code
-            == 401
+            == 403
         )
 
 class TestProtectedSurface:
@@ -291,6 +293,8 @@ class TestAuthCoverage:
         ("POST", "/auth/login"),
         ("POST", "/auth/logout"),
         ("GET", "/health"),
+        ("GET", "/webhooks/whatsapp"),
+        ("POST", "/webhooks/whatsapp"),
     }
     API_PREFIXES = ("/auth", "/messages", "/tasks", "/webhooks", "/health")
 

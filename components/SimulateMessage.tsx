@@ -17,7 +17,7 @@ export default function SimulateMessage({ onSent }: { onSent: () => void }) {
 
     setSending(true);
     try {
-      await apiFetch("/webhooks/whatsapp", {
+      await apiFetch("/webhooks/simulate", {
         method: "POST",
         body: JSON.stringify({ sender: sender.trim(), message: message.trim() }),
       });

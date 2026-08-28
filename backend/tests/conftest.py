@@ -24,7 +24,7 @@ def sync_db():
     client = pymongo.MongoClient(MONGO_URI)
     db = client[DB_NAME]
     yield db
-    for name in ("users", "messages", "tasks"):
+    for name in ("users", "messages", "tasks", "connections"):
         db[name].delete_many({})
     client.close()
 
@@ -38,8 +38,8 @@ def client(sync_db):
 
 @pytest.fixture(autouse=True)
 def clean_db(sync_db):
-    for name in ("users", "messages", "tasks"):
+    for name in ("users", "messages", "tasks", "connections"):
         sync_db[name].delete_many({})
     yield
-    for name in ("users", "messages", "tasks"):
+    for name in ("users", "messages", "tasks", "connections"):
         sync_db[name].delete_many({})

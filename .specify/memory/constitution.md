@@ -1,22 +1,23 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.8.0 → 1.9.0 (MINOR: new Day 21 Task Management section
-added covering task display rules, action rules (Complete, Snooze, View),
-user isolation for tasks, quality bar)
+Version change: 1.10.0 → 1.11.0 (MINOR: new Day 23 Real WhatsApp Webhook
+section added covering the normalized communication format principle,
+security & validation rules, ingestion flow, prohibitions, quality bar)
 Modified principles:
   - None existing principles modified
 Added sections:
-  - Day 21 Task Management (purpose, core task management principles,
-    task display rules, task action rules, quality bar)
+  - Day 23 Real WhatsApp Webhook (purpose, normalized message format,
+    security & validation rules, what happens when a real message arrives,
+    must-not-happen prohibitions, quality bar)
 Removed sections: N/A
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ no changes needed
     (Constitution Check gates derive from constitution file)
   - .specify/templates/spec-template.md ✅ no changes needed
-    (requirements format compatible with task management constraints)
+    (requirements format compatible with webhook normalization constraints)
   - .specify/templates/tasks-template.md ✅ no changes needed
-    (task structure compatible; task management tasks follow standard patterns)
+    (task structure compatible; ingestion tasks follow standard patterns)
   - .specify/templates/commands/*.md ✅ N/A — no command templates exist
 Follow-up TODOs: None
 -->
@@ -1036,6 +1037,270 @@ Every task in the "My Tasks" page MUST:
 - **Responsive design**: Task list MUST work on desktop and mobile widths
 - **Accessibility**: Task actions MUST be keyboard navigable
 
+### Day 22 WhatsApp Business Integration Research + Setup
+
+This section defines the rules for researching and setting up the official
+WhatsApp Business Platform (Cloud API) integration. It extends Principle IV
+(User Control), Principle V (Security and Privacy), and the Connection
+Architecture from Day 19. Day 22 is a research and setup day — not full
+implementation.
+
+#### Purpose of Real WhatsApp Integration
+
+Replace the fake/mock WhatsApp webhook with a real integration using the
+official WhatsApp Business Platform Cloud API. The system MUST receive
+incoming messages from a verified WhatsApp Business number, process them
+through the AI pipeline, and display results on the dashboard.
+
+**Success means**: A test message sent to the WhatsApp Business number is
+received by the webhook, stored in MongoDB, and appears on the dashboard
+with full AI analysis — proving the integration works end-to-end.
+
+#### Official & Allowed Approach Only
+
+The system MUST use ONLY the official WhatsApp Business Platform Cloud API
+provided by Meta. Specifically:
+
+1. **Cloud API only.** All WhatsApp communication MUST go through the
+   official Meta Cloud API (`graph.facebook.com`). Self-hosted BSP
+   solutions, third-party wrappers, or reverse-engineered endpoints are
+   forbidden.
+2. **Meta Developer account required.** A Meta Developer account MUST be
+   created and used to register the WhatsApp Business app.
+3. **Official SDK or REST API.** Use the official Meta SDK or direct REST
+   API calls. No community libraries that abstract the API without
+   maintaining compatibility.
+4. **Webhook verification.** The webhook endpoint MUST respond to Meta's
+   verification challenge (`GET` request with `hub.mode`, `hub.verify_token`,
+   `hub.challenge`) before receiving any messages.
+
+#### Security & Privacy Principles for WhatsApp Integration
+
+1. **Credentials in environment only.** The WhatsApp Business Account ID,
+   Phone Number ID, Access Token, and Webhook Verify Token MUST be stored
+   in environment variables (`.env.local`), never in code, database, or
+   version control.
+2. **HTTPS required.** The webhook endpoint MUST be served over HTTPS.
+   Meta will not send webhooks to HTTP endpoints.
+3. **Webhook signature verification.** Every incoming webhook request MUST
+   be validated using Meta's `X-Hub-Signature-256` header before
+   processing. Requests with invalid signatures MUST be rejected.
+4. **No personal WhatsApp data.** The system MUST NOT attempt to read,
+   access, or process personal WhatsApp notifications, messages from
+   personal accounts, or data outside the WhatsApp Business Platform
+   scope.
+5. **User isolation for WhatsApp connections.** Each user's WhatsApp
+   Business connection MUST be isolated per the User Isolation Rules from
+   Day 18. The `user_id` is resolved server-side from the verified JWT —
+   never from webhook query parameters.
+6. **Minimal data retention.** Store only the message content, sender
+   metadata, and timestamps needed for the AI pipeline. Do not store
+   raw webhook payloads longer than necessary for processing.
+
+#### What to Set Up Today (Research + Setup Scope)
+
+Day 22 covers research and initial configuration only. The following
+MUST be completed:
+
+| Task | Description |
+|---|---|
+| Meta Developer Account | Create and verify a Meta Developer account |
+| WhatsApp Business App | Register a new app in the Meta Developer portal |
+| WhatsApp Business Number | Associate a test phone number with the Business account |
+| Cloud API Access | Obtain the Phone Number ID, WhatsApp Business Account ID, and a temporary access token |
+| Webhook Configuration | Register a webhook URL in the Meta portal pointing to the backend endpoint |
+| Webhook Verification | Implement and test the `GET` verification challenge endpoint |
+| Environment Variables | Store all credentials (access token, phone number ID, WABA ID, verify token) in `.env.local` |
+| Test Message Reception | Send a test message to the Business number and confirm the webhook receives it |
+| MongoDB Storage | Store the received test message in the `messages` collection with `user_id` |
+| End-to-End Proof | Verify the test message appears on the dashboard with AI analysis |
+
+#### What MUST NOT Happen
+
+- **NEVER read personal WhatsApp notifications.** The system MUST NOT
+  access, scrape, or process WhatsApp messages from personal accounts.
+  Only messages sent to the registered WhatsApp Business number through
+  the official Cloud API are in scope.
+- **NEVER use unofficial APIs or libraries.** Third-party WhatsApp
+  wrappers (e.g., `whatsapp-web.js`, `baileys`, community reverse-engineered
+  libraries) are forbidden. Only the official Meta Cloud API is allowed.
+- **NEVER store API keys or tokens in code.** All credentials MUST be in
+  environment variables. Hardcoded secrets are a blocking security violation.
+- **NEVER skip webhook signature verification.** Every incoming request
+  MUST be validated. Accepting unsigned webhooks is a security breach.
+- **NEVER auto-send messages during research.** Day 22 is about receiving
+  and processing incoming messages. Auto-reply, broadcast, or template
+  message sending is out of scope for this phase.
+- **NEVER expose webhook secrets or access tokens to the frontend.**
+  WhatsApp Business credentials are backend-only, consistent with the
+  Connection Architecture from Day 19.
+
+#### Quality Bar for Day 22
+
+- **Webhook verification**: The `GET` verification endpoint responds
+  correctly to Meta's challenge and the portal shows "Verified" status.
+- **Message reception**: A test message sent to the Business number is
+  received by the `POST` webhook endpoint within 30 seconds.
+- **Signature validation**: Webhook requests with invalid or missing
+  signatures are rejected (403 or 400).
+- **Storage**: Received test messages are stored in MongoDB with `user_id`,
+  `sender`, `content`, `timestamp`, and `source: "whatsapp"`.
+- **Dashboard display**: The test message appears on the dashboard with
+  AI analysis (priority, summary, tasks, recommendation) — end-to-end
+  flow confirmed.
+- **Credential security**: Zero hardcoded secrets; all credentials in
+  `.env.local`; `.env.local` is gitignored.
+- **User isolation**: The test message is associated with the authenticated
+  user's `user_id` from the JWT — not from webhook parameters.
+
+### Day 23 Real WhatsApp Webhook
+
+This section defines the rules for converting the verified webhook from
+Day 22 into a real ingestion endpoint for the WhatsApp Business Cloud API.
+It extends Principle II (Vertical Slices), Principle V (Security and
+Privacy), the Day 18 User Isolation Rules, and the Day 22 WhatsApp Business
+Integration. Day 23 is an implementation day: the webhook stops being a
+research stub and becomes the entry point for real messages.
+
+#### Purpose of the Real WhatsApp Webhook
+
+Receive real incoming messages from the WhatsApp Business Cloud API,
+validate them, and normalize them into the standard Communication AI message
+format before storing to MongoDB and running the AI pipeline.
+
+**Success means**: A real message sent to the WhatsApp Business number is
+received by the webhook, validated, normalized, stored in MongoDB, and
+appears on the dashboard with full AI analysis — following exactly the same
+path as the simulate endpoint today. Neither the AI pipeline nor the
+dashboard can tell whether a message came from WhatsApp, the simulate
+endpoint, or a future channel.
+
+#### Normalized Message Format (Source-Agnosticity)
+
+The AI pipeline, dashboard, and database MUST NEVER consume channel-specific
+payloads. WhatsApp payloads, simulate payloads, and future channels are
+translated at the ingestion boundary into one canonical message document:
+
+```json
+{
+  "userId": "64f...",
+  "source": "whatsapp",
+  "sender": "Ali",
+  "content": "Send me the slides tonight.",
+  "receivedAt": "2026-08-28T09:41:00Z",
+  "externalMessageId": "wamid.ABC123..."
+}
+```
+
+Rules:
+
+1. **`source` is an enum, never free text.** Allowed values: `whatsapp`,
+   `simulate`, and channels added later by explicit amendment. Downstream
+   code branches on this field; no other source indicator is read.
+2. **`sender` is human-readable.** Use the profile name from the payload
+   when present; fall back to the `wa_id` phone number when it is not.
+   Never store raw Meta contact objects.
+3. **`content` is the message text.** For non-text messages (images, audio,
+   documents), store an empty string and let the pipeline mark the message
+   as media-only. Never drop the message.
+4. **`receivedAt` is server time.** The UTC ISO-8601 timestamp captured when
+   the webhook received the event — not the sender-reported timestamp.
+5. **`externalMessageId` is the provider message ID** (e.g., Meta `wamid`).
+   It MUST be persisted and MUST key idempotence.
+6. **`userId` is set server-side.** The owning user is resolved from verified
+   webhook credentials / the connection mapping — never from query
+   parameters, request body, or headers (User Isolation Rules, Day 18).
+
+**Rationale**: Normalization is the boundary between the external world and
+the AI core. If every channel parses its own payload, the pipeline grows one
+special case per provider and quality dies by entropy. One canonical format
+keeps the AI, MongoDB, and the dashboard provider-agnostic.
+
+#### Security & Validation Rules
+
+1. **Signature first.** Every `POST /webhooks/whatsapp` request MUST be
+   validated against Meta's `X-Hub-Signature-256` header (HMAC-SHA256 over
+   the raw body with `WHATSAPP_APP_SECRET`) BEFORE any parsing. Invalid or
+   missing signatures return 403 and are never processed.
+2. **Structure validation.** The parsed payload MUST be validated with a
+   Pydantic model matching Meta's schema before any field is read.
+   Malformed payloads are rejected (400) and never stored.
+3. **Respond fast, process later.** The webhook handler MUST return 200 as
+   soon as the message is validated and accepted. The AI pipeline runs
+   asynchronously off the request path. A non-2xx reply triggers Meta
+   retries and duplicate deliveries.
+4. **Idempotent delivery.** Processing MUST be keyed on `externalMessageId`.
+   A duplicate delivery (Meta retry, replay) MUST be acknowledged with 200
+   and skipped without creating a duplicate document.
+5. **Credentials server-side only.** `WHATSAPP_APP_SECRET`, access tokens,
+   and verify tokens stay in environment variables and are never returned
+   to the frontend (Connection Architecture, Day 19).
+6. **Minimal retention.** Store the normalized message, not the raw Meta
+   payload. Raw webhook payloads are never persisted long-term or surfaced
+   to the dashboard.
+
+#### What Happens When a Real Message Arrives
+
+```text
+WhatsApp  →  Webhook POST (Meta Cloud API)
+              ↓
+        1. Verify X-Hub-Signature-256
+              ↓
+        2. Validate payload structure (Pydantic)
+              ↓
+        3. Normalize to canonical message format
+              ↓
+        4. Dedupe on externalMessageId  ── dup → respond 200, stop
+              ↓
+        5. Persist to MongoDB with user_id (server-side)
+              ↓
+        6. Trigger AI pipeline asynchronously
+              ↓
+        7. Dashboard renders from stored analysis only
+```
+
+Each step is a distinct responsibility. The webhook handler covers steps 1–5
+and responds 200; the pipeline runs step 6 out-of-band; the dashboard never
+touches the webhook (Complete AI Pipeline rules).
+
+#### What MUST NOT Happen
+
+- **NEVER process an unverified webhook.** Requests with invalid or missing
+  signatures are rejected before any parsing or storage.
+- **NEVER block the Meta response on the AI pipeline.** The webhook MUST
+  respond 200 fast; running the five-agent pipeline synchronously risks
+  timeouts, retries, and duplicate processing.
+- **NEVER store raw Meta payloads.** Only the normalized message is
+  persisted. Raw payloads are not kept beyond the request scope.
+- **NEVER trust client-supplied identity.** `userId` is resolved server-side
+  from verified credentials, never from query parameters or body fields.
+- **NEVER bypass normalization.** No service, agent, or dashboard component
+  reads WhatsApp-specific fields (`text.body`, `wa_id`) directly.
+- **NEVER auto-reply or auto-send.** Day 23 remains receive-only; outbound
+  messaging stays out of scope (as in Day 22).
+
+#### Quality Bar for Day 23
+
+- **Signature validation**: Webhook requests with invalid or missing
+  `X-Hub-Signature-256` are rejected (403); zero unverified payloads are
+  processed.
+- **Normalization fidelity**: A real received message converts losslessly to
+  the canonical format (`source`, `sender`, `content`, `receivedAt`,
+  `externalMessageId`) — verified with a live test message.
+- **End-to-end parity**: A real WhatsApp message and a simulate message
+  produce identical dashboard cards; the pipeline and dashboard cannot
+  distinguish the source.
+- **Idempotency**: Redelivering the same webhook payload produces zero
+  duplicate documents (keyed on `externalMessageId`).
+- **Responsiveness**: The webhook responds 200 within 1 second of arrival;
+  total pipeline latency stays within the existing ≤ 10 second budget.
+- **Source-agnostic core**: Zero references to WhatsApp-specific fields in
+  the AI pipeline, storage layer, or dashboard (grep-verifiable).
+- **Isolation**: The ingested message carries a server-resolved `user_id`
+  and is visible only to that user.
+- **No regression**: Simulated messages continue to work through the same
+  normalized ingest path.
+
 ### Auth Pages UI/UX Principles
 
 Both `/login` and `/signup` share one visual system built on Tailwind CSS +
@@ -1274,5 +1539,13 @@ Before merging any feature branch, verify:
 - [ ] Task list loads in under 1 second for up to 100 tasks
 - [ ] Task list works responsively on desktop and mobile widths
 - [ ] Task actions are keyboard navigable
+- [ ] Webhook POST requests are validated with Meta's `X-Hub-Signature-256`; invalid or missing signatures are rejected before parsing
+- [ ] Incoming webhook messages are normalized to the canonical format (`userId`, `source`, `sender`, `content`, `receivedAt`, `externalMessageId`) before storage or processing
+- [ ] `externalMessageId` keys idempotence — duplicate webhook deliveries produce zero duplicate documents
+- [ ] Webhook responds 200 quickly; the AI pipeline runs asynchronously and never blocks the Meta response
+- [ ] Raw Meta webhook payloads are never stored long-term or exposed to the frontend
+- [ ] `user_id` for webhook-derived messages is resolved server-side from verified credentials, never from query parameters or body
+- [ ] No WhatsApp-specific fields (`text.body`, `wa_id`) are referenced by the AI pipeline, storage layer, or dashboard
+- [ ] Simulated messages continue to flow through the same normalized ingest path without regression
 
-**Version**: 1.9.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-26
+**Version**: 1.11.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-28

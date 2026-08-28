@@ -28,6 +28,11 @@ class MessageCreate(BaseModel):
     status: str = "unread"
 
 
+class SimulateMessageRequest(BaseModel):
+    sender: str
+    message: str
+
+
 class MessageUpdate(BaseModel):
     sender: Optional[str] = None
     content: Optional[str] = None
@@ -46,6 +51,8 @@ class MessageResponse(BaseModel):
     ai_analysis: Optional[AIAnalysis] = None
     created_at: datetime
     updated_at: datetime
+    external_message_id: Optional[str] = None
+    received_at: Optional[datetime] = None
 
 
 def message_doc_to_response(doc: dict) -> dict:
@@ -63,4 +70,6 @@ def message_doc_to_response(doc: dict) -> dict:
         "ai_analysis": ai_analysis,
         "created_at": doc["created_at"],
         "updated_at": doc["updated_at"],
+        "external_message_id": doc.get("external_message_id"),
+        "received_at": doc.get("received_at"),
     }

@@ -7,6 +7,7 @@ Run: python test_attention_pipeline.py
 """
 
 import asyncio
+import json
 import sys
 import httpx
 from dotenv import load_dotenv
@@ -165,42 +166,145 @@ def run_unit_tests():
 
 
 async def test_duplicate_message_updates_not_inserts():
-    """Day14: Re-sending an identical WhatsApp payload updates the existing
-    message instead of creating a copy."""
+    """Day23 (reworked from Day14): Re-delivering an identical signed Meta
+    payload (same messages[].id) updates the existing message instead of
+    creating a copy. Requires WHATSAPP_APP_SECRET to be set in .env."""
+    import hashlib
+    import hmac
+    import os
     import time
 
-    payload = {
-        "sender": f"Dup Tester {int(time.time())}",
-        "message": "Duplicate guard check: send the FYP slides tonight.",
-        "timestamp": None,
-    }
+    app_secret = os.getenv("WHATSAPP_APP_SECRET", "")
+    if not app_secret:
+        raise RuntimeError(
+            "WHATSAPP_APP_SECRET is not set in .env — paste the real Meta App "
+            "Secret before running integration tests against real traffic."
+        )
+
+    verify_token = os.getenv("WHATSAPP_VERIFY_TOKEN", "")
+    phone_number_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+    if not phone_number_id:
+        raise RuntimeError("WHATSAPP_PHONE_NUMBER_ID is not set in .env")
+
+    wamid = f"wamid.dup.{int(time.time())}"
+
+    def meta_payload():
+        return {
+            "object": "whatsapp_business_account",
+            "entry": [
+                {
+                    "id": "111111111111111",
+                    "changes": [
+                        {
+                            "field": "messages",
+                            "value": {
+                                "messaging_product": "whatsapp",
+                                "metadata": {
+                                    "display_phone_number": "15550000000",
+                                    "phone_number_id": phone_number_id,
+                                },
+                                "contacts": [
+                                    {
+                                        "profile": {"name": "Dup Tester"},
+                                        "wa_id": "15551234567",
+                                    }
+                                ],
+                                "messages": [
+                                    {
+                                        "from": "15551234567",
+                                        "id": wamid,
+                                        "timestamp": str(int(time.time())),
+                                        "type": "text",
+                                        "text": {
+                                            "body": (
+                                                "Duplicate guard check: send the "
+                                                "FYP slides tonight."
+                                            )
+                                        },
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+
+    def signed(raw):
+        return hmac.new(
+            app_secret.encode(), raw, hashlib.sha256
+        ).hexdigest()
+
+    async def deliver(raw):
+        return await client.post(
+            f"{BASE_URL}/webhooks/whatsapp",
+            content=raw,
+            headers={"X-Hub-Signature-256": f"sha256={signed(raw)}"},
+        )
 
     async with httpx.AsyncClient(timeout=180.0) as client:
-        first = await client.post(f"{BASE_URL}/webhooks/whatsapp", json=payload)
-        assert first.status_code == 200, f"Expected 200, got {first.status_code}"
-        first_id = first.json()["data"]["id"]
-
-        second = await client.post(f"{BASE_URL}/webhooks/whatsapp", json=payload)
-        assert second.status_code == 200, f"Expected 200, got {second.status_code}"
-        second_id = second.json()["data"]["id"]
-
-        assert first_id == second_id, (
-            f"Duplicate created new message: {first_id} != {second_id}"
+        register = await client.post(
+            f"{BASE_URL}/auth/register",
+            json={
+                "name": f"Dup Tester {int(time.time())}",
+                "email": f"dup{int(time.time())}@example.com",
+                "password": "s3cretpass",
+            },
         )
+        assert register.status_code == 201, (
+            f"Expected 201, got {register.status_code}: {register.text}"
+        )
+
+        # Ingested messages are attributed to the connected whatsapp owner,
+        # so the test user must link the number server-side first.
+        connect = await client.post(
+            f"{BASE_URL}/connections", json={"provider": "whatsapp"}
+        )
+        assert connect.status_code == 201, (
+            f"Expected 201, got {connect.status_code}: {connect.text}"
+        )
+
+        body = json.dumps(meta_payload()).encode()
+        first = await deliver(body)
+        assert first.status_code == 200, (
+            f"Expected 200, got {first.status_code}: {first.text}"
+        )
+        assert first.json() == {"status": "ok"}
+
+        second = await deliver(body)
+        assert second.status_code == 200, (
+            f"Expected 200, got {second.status_code}: {second.text}"
+        )
+        assert second.json() == {"status": "ok"}
 
         listing = await client.get(f"{BASE_URL}/messages")
         assert listing.status_code == 200
         matches = [
-            m
-            for m in listing.json()
-            if m["sender"] == payload["sender"] and m["content"] == payload["message"]
+            m for m in listing.json()["messages"]
+            if m.get("external_message_id") == wamid
         ]
         assert len(matches) == 1, f"Expected 1 document, found {len(matches)}"
-        assert matches[0]["ai_analysis"]["status"] == "completed"
+
+        # AI runs as a background task after the ack, so poll briefly.
+        status = None
+        for _ in range(15):
+            listing = await client.get(f"{BASE_URL}/messages")
+            matches = [
+                m for m in listing.json()["messages"]
+                if m.get("external_message_id") == wamid
+            ]
+            assert len(matches) == 1, f"Expected 1 document, found {len(matches)}"
+            status = (matches[0].get("ai_analysis") or {}).get("status")
+            if status == "completed":
+                break
+            await asyncio.sleep(2)
+        assert status == "completed", (
+            f"Expected ai_analysis.status=completed, got {status}"
+        )
 
         print(
-            f"[PASS] Day14: Duplicate guard works - single document {first_id}, "
-            "analysis updated in place"
+            f"[PASS] Day23: Duplicate guard works under signed Meta payloads - "
+            f"single document {wamid}, analysis updated in place"
         )
 
 

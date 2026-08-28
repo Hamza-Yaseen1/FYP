@@ -1,7 +1,15 @@
+import hashlib
+import hmac
+import json
+import os
 from datetime import datetime, timezone
 
 import pytest
 from bson import ObjectId
+
+TEST_SECRET = "test_app_secret"
+os.environ["WHATSAPP_APP_SECRET"] = TEST_SECRET
+PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "1308658958991189")
 
 
 REGISTER_A = {"name": "User A", "email": "isolation-a@test.com", "password": "passA12345"}
@@ -37,7 +45,6 @@ class TestUserIsolation:
     @pytest.fixture(autouse=True)
     def _patch_analyzer(self, monkeypatch):
         monkeypatch.setattr("routes.messages.analyze_message", _fake_analyze)
-        monkeypatch.setattr("routes.webhooks.analyze_message", _fake_analyze)
 
     def _register(self, client, body):
         res = client.post("/auth/register", json=body)
@@ -51,6 +58,54 @@ class TestUserIsolation:
 
     def _msg_body(self, content, source="simulated"):
         return {"sender": "Test Contact", "content": content, "source": source}
+
+    def _meta_payload(self, message, wamid="wamid.ISOLATION",
+                      phone_number_id=PHONE_NUMBER_ID):
+        return {
+            "object": "whatsapp_business_account",
+            "entry": [
+                {
+                    "id": "111111111111111",
+                    "changes": [
+                        {
+                            "field": "messages",
+                            "value": {
+                                "messaging_product": "whatsapp",
+                                "metadata": {
+                                    "display_phone_number": "15550000000",
+                                    "phone_number_id": phone_number_id,
+                                },
+                                "contacts": [
+                                    {"profile": {"name": "Ali"}, "wa_id": "15551234567"}
+                                ],
+                                "messages": [
+                                    {
+                                        "from": "15551234567",
+                                        "id": wamid,
+                                        "timestamp": "1700000000",
+                                        "type": "text",
+                                        "text": {"body": message},
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+
+    def _signed_webhook(self, client, payload):
+        body = json.dumps(payload).encode()
+        sig = hmac.new(TEST_SECRET.encode(), body, hashlib.sha256).hexdigest()
+        return client.post(
+            "/webhooks/whatsapp",
+            content=body,
+            headers={"X-Hub-Signature-256": f"sha256={sig}"},
+        )
+
+    def _connect_whatsapp(self, client):
+        res = client.post("/connections", json={"provider": "whatsapp"})
+        assert res.status_code == 201
 
     def _create_task(self, sync_db, user_id, description="Test task", status="pending"):
         now = datetime.now(timezone.utc)
@@ -81,7 +136,7 @@ class TestUserIsolation:
 
         listing = client.get("/messages")
         assert listing.status_code == 200
-        assert all(m["id"] != msg_a_id for m in listing.json())
+        assert all(m["id"] != msg_a_id for m in listing.json()["messages"])
 
     def test_user_b_messages_visible_only_to_b(self, client):
         uid_a, tok_a = self._register(client, REGISTER_A)
@@ -97,7 +152,7 @@ class TestUserIsolation:
 
         listing = client.get("/messages")
         assert listing.status_code == 200
-        msg_ids = [m["id"] for m in listing.json()]
+        msg_ids = [m["id"] for m in listing.json()["messages"]]
         assert msg_b_id in msg_ids
         assert msg_a_id not in msg_ids
 
@@ -229,7 +284,7 @@ class TestUserIsolation:
 
         _, tok_b = self._register(client, REGISTER_B)
         self._switch(client, tok_b)
-        listing = client.get("/messages").json()
+        listing = client.get("/messages").json()["messages"]
         assert len(listing) == 0
 
     def test_ai_analysis_not_leaked_via_cross_user_message_detail(self, client):
@@ -252,31 +307,96 @@ class TestUserIsolation:
 
     # ── US4: Webhook Messages Are Scoped to Owner ──────────────────
 
-    def test_webhook_message_scoped_to_authenticating_user(self, client):
+    def test_webhook_message_scoped_to_authenticating_user(self, client, sync_db, monkeypatch):
+        async def webhook_fake_analyze(content, message_id=None, user_id=None):
+            return {
+                "priority": "important",
+                "confidence": 0.95,
+                "explanation": "stubbed",
+                "summary": "stubbed summary",
+                "recommended_action": "",
+                "recommended_actions": [],
+                "tasks_extracted": [],
+                "deadlines": [],
+                "provider": "stub",
+                "analyzed_at": datetime.now(timezone.utc),
+                "status": "completed",
+            }
+
+        monkeypatch.setattr(
+            "services.webhook_ingest.analyze_message", webhook_fake_analyze
+        )
+
         uid_a, tok_a = self._register(client, REGISTER_A)
         self._switch(client, tok_a)
-        webhook_res = client.post(
-            "/webhooks/whatsapp",
-            json={"sender": "Alice", "message": TASK_CONTENT, "timestamp": "2026-08-25T10:00:00Z"},
+        self._connect_whatsapp(client)
+        res = self._signed_webhook(
+            client, self._meta_payload(TASK_CONTENT, wamid="wamid.ISO-MSG1")
         )
-        assert webhook_res.status_code == 200
+        assert res.status_code == 200
+        assert res.json() == {"status": "ok"}
+
+        doc = sync_db.messages.find_one(
+            {"external_message_id": "wamid.ISO-MSG1"}
+        )
+        assert doc is not None
+        assert doc["user_id"] == uid_a
+        assert doc["source"] == "whatsapp"
 
         _, tok_b = self._register(client, REGISTER_B)
         self._switch(client, tok_b)
-        listing = client.get("/messages").json()
-        assert len(listing) == 0
+        listing_b = client.get("/messages").json()["messages"]
+        assert len(listing_b) == 0
 
         self._switch(client, tok_a)
-        listing_a = client.get("/messages").json()
+        listing_a = client.get("/messages").json()["messages"]
         assert len(listing_a) >= 1
+        assert all(m["sender"] == "Ali" for m in listing_a)
 
-    def test_webhook_tasks_scoped_to_authenticating_user(self, client, sync_db):
+    def test_webhook_tasks_scoped_to_authenticating_user(self, client, sync_db, monkeypatch):
+        async def webhook_fake_analyze(content, message_id=None, user_id=None):
+            now = datetime.now(timezone.utc)
+            if user_id:
+                sync_db.tasks.insert_one(
+                    {
+                        "user_id": user_id,
+                        "description": "Review the quarterly report",
+                        "deadline": "Friday",
+                        "priority_indicator": "high",
+                        "requires_action": True,
+                        "status": "pending",
+                        "source_message_id": message_id,
+                        "source_message_preview": content[:80],
+                        "created_at": now,
+                    }
+                )
+            return {
+                "priority": "important",
+                "confidence": 0.95,
+                "explanation": "stubbed",
+                "summary": "stubbed summary",
+                "recommended_action": "Review document",
+                "recommended_actions": ["Review document"],
+                "tasks_extracted": [
+                    {"description": "Review the quarterly report", "deadline": "Friday"}
+                ],
+                "deadlines": ["Friday"],
+                "provider": "stub",
+                "analyzed_at": now,
+                "status": "completed",
+            }
+
+        monkeypatch.setattr(
+            "services.webhook_ingest.analyze_message", webhook_fake_analyze
+        )
+
         uid_a, tok_a = self._register(client, REGISTER_A)
         self._switch(client, tok_a)
-        client.post(
-            "/webhooks/whatsapp",
-            json={"sender": "Alice", "message": TASK_CONTENT, "timestamp": "2026-08-25T11:00:00Z"},
+        self._connect_whatsapp(client)
+        res = self._signed_webhook(
+            client, self._meta_payload(TASK_CONTENT, wamid="wamid.ISO-TASK1")
         )
+        assert res.status_code == 200
 
         uid_b, tok_b = self._register(client, REGISTER_B)
         self._switch(client, tok_b)
@@ -285,10 +405,14 @@ class TestUserIsolation:
 
         self._switch(client, tok_a)
         tasks_a = client.get("/tasks").json()
-        assert len(tasks_a) == 0
+        assert len(tasks_a) >= 1
 
-        msg = sync_db.messages.find_one({"user_id": uid_a, "source": "whatsapp"})
+        msg = sync_db.messages.find_one(
+            {"user_id": uid_a, "source": "whatsapp",
+             "external_message_id": "wamid.ISO-TASK1"}
+        )
         assert msg is not None
+        assert msg["ai_analysis"]["status"] == "completed"
 
     # ── US5: Dashboard Shows Only My Data ──────────────────────────
 
@@ -302,10 +426,10 @@ class TestUserIsolation:
         client.post("/messages", json=self._msg_body("B dashboard msg"))
 
         self._switch(client, tok_a)
-        msgs_a = client.get("/messages").json()
+        msgs_a = client.get("/messages").json()["messages"]
 
         self._switch(client, tok_b)
-        msgs_b = client.get("/messages").json()
+        msgs_b = client.get("/messages").json()["messages"]
 
         ids_a = {m["id"] for m in msgs_a}
         ids_b = {m["id"] for m in msgs_b}
@@ -337,7 +461,7 @@ class TestUserIsolation:
 
         uid_b, tok_b = self._register(client, REGISTER_B)
         self._switch(client, tok_b)
-        msgs = client.get("/messages").json()
+        msgs = client.get("/messages").json()["messages"]
         assert len(msgs) == 0
         tasks = client.get("/tasks").json()
         assert len(tasks) == 0
