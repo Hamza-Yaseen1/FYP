@@ -44,7 +44,7 @@ async def _fake_analyze(message_content, message_id=None, user_id=None):
 class TestUserIsolation:
     @pytest.fixture(autouse=True)
     def _patch_analyzer(self, monkeypatch):
-        monkeypatch.setattr("routes.messages.analyze_message", _fake_analyze)
+        monkeypatch.setattr("routes.messages.process_message", _fake_analyze)
 
     def _register(self, client, body):
         res = client.post("/auth/register", json=body)
@@ -324,7 +324,7 @@ class TestUserIsolation:
             }
 
         monkeypatch.setattr(
-            "services.webhook_ingest.analyze_message", webhook_fake_analyze
+            "services.webhook_ingest.process_message", webhook_fake_analyze
         )
 
         uid_a, tok_a = self._register(client, REGISTER_A)
@@ -387,7 +387,7 @@ class TestUserIsolation:
             }
 
         monkeypatch.setattr(
-            "services.webhook_ingest.analyze_message", webhook_fake_analyze
+            "services.webhook_ingest.process_message", webhook_fake_analyze
         )
 
         uid_a, tok_a = self._register(client, REGISTER_A)

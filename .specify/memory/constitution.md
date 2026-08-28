@@ -1,23 +1,30 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.10.0 → 1.11.0 (MINOR: new Day 23 Real WhatsApp Webhook
-section added covering the normalized communication format principle,
-security & validation rules, ingestion flow, prohibitions, quality bar)
+Version change: 1.11.0 → 1.12.0 (MINOR: new Day 24 AI Orchestrator section
+added covering orchestration purpose, core principles, what the Orchestrator
+decides, what it must NOT do, and the quality bar; Complete AI Pipeline rules
+amended so agent selection is now made by the Orchestrator, not a fixed
+all-five-agents default)
 Modified principles:
-  - None existing principles modified
+  - Complete AI Pipeline core principle #1 "One message in, one complete
+    analysis out" → agent selection now delegated to the Day 24 Orchestrator
+  - Complete AI Pipeline core principle #2 "Fixed stage order" → order applies
+    among the agents selected by the Orchestrator
+  - Complete Pipeline Targets → "all five agents" line now reads
+    "Orchestrator → selected agents"
 Added sections:
-  - Day 23 Real WhatsApp Webhook (purpose, normalized message format,
-    security & validation rules, what happens when a real message arrives,
-    must-not-happen prohibitions, quality bar)
+  - Day 24 AI Orchestrator (purpose, core orchestration principles, what the
+    Orchestrator MUST decide, what it MUST NOT do, quality bar)
 Removed sections: N/A
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ no changes needed
     (Constitution Check gates derive from constitution file)
   - .specify/templates/spec-template.md ✅ no changes needed
-    (requirements format compatible with webhook normalization constraints)
+    (requirements format neutral to orchestration rules)
   - .specify/templates/tasks-template.md ✅ no changes needed
-    (task structure compatible; ingestion tasks follow standard patterns)
+    (task structure compatible; routing/agent-selection tasks follow standard
+    patterns)
   - .specify/templates/commands/*.md ✅ N/A — no command templates exist
 Follow-up TODOs: None
 -->
@@ -341,23 +348,27 @@ into one end-to-end flow (Day 14). These rules extend Principle II
 (Vertical Slices), Principle III (AI is Assistive, Not Magical), and
 Principle VII (Progressive Enhancement).
 
+**Day 24 amendment**: Which agents run for a given message is decided by
+the AI Orchestrator (see "Day 24 AI Orchestrator" below), not by a fixed
+default. This pipeline executes whichever agents the Orchestrator selects,
+in the order the Orchestrator fixes.
+
 ### Purpose
 
-When a message arrives, the complete pipeline MUST run every agent in
-sequence and deliver one coherent result to MongoDB and the Dashboard:
+When a message arrives, the AI Orchestrator routes it to the agents it
+needs; the pipeline runs the selected agents in sequence and delivers one
+coherent result to MongoDB and the Dashboard:
 
 ```text
 Message
   ↓
-Priority Agent
+AI Orchestrator ── decides which agents are needed
   ↓
-Summary
+Priority Agent (always)
   ↓
-Task Extraction
+[Summary / Task Extraction / Deadline Detection as routed]
   ↓
-Deadline Detection
-  ↓
-Recommended Action
+Recommended Action (when routed)
   ↓
 MongoDB
   ↓
@@ -370,13 +381,16 @@ a single raw message.
 
 ### Core Principles for the Full Flow
 
-1. **One message in, one complete analysis out.** Every incoming message
-   MUST pass through all five agents exactly once per processing run.
-   No message is left half-analyzed unless a stage fails, in which case
-   that stage's documented fallback value is stored instead.
-2. **Fixed stage order.** Priority runs first (it drives attention
-   ranking); Recommended Action runs last (it consumes task and deadline
-   context). Stages MUST NOT be reordered or silently skipped.
+1. **One message in, one directed analysis out.** Every incoming message
+   MUST pass through the AI Orchestrator exactly once per processing run;
+   the Orchestrator selects the agents required for that message (Day 24).
+   Selected agents then run exactly once. No message is left half-analyzed
+   unless a stage is intentionally skipped by the Orchestrator or fails, in
+   which case that stage's documented fallback value is stored instead.
+2. **Fixed stage order.** Among the agents selected by the Orchestrator,
+   Priority runs first (it drives attention ranking); Recommended Action
+   runs last (it consumes task and deadline context). Stages MUST NOT be
+   reordered or silently skipped.
 3. **Single LLM call.** Priority, tasks, deadlines, and recommendation
    MUST share one LLM analysis call, consistent with the feature guidance
    above. Adding pipeline stages MUST NOT multiply API round-trips.
@@ -1301,6 +1315,144 @@ touches the webhook (Complete AI Pipeline rules).
 - **No regression**: Simulated messages continue to work through the same
   normalized ingest path.
 
+### Day 24 AI Orchestrator
+
+This section defines the rules for the AI Orchestrator, a single decision
+layer that chooses which agents — Priority, Summary, Task Extraction,
+Deadline Detection, Recommended Action — need to run for each new message.
+It extends Principle I (Simplicity First), Principle III (AI is Assistive,
+Not Magical), Principle VII (Progressive Enhancement), and the Complete AI
+Pipeline rules. One clear orchestration layer MUST replace any scattered,
+ad-hoc AI calls.
+
+#### Purpose of the AI Orchestrator
+
+The Orchestrator is the single entry point between message ingestion and
+the AI agents. Its job is to answer one question for every message: "What
+do we need to know about this message — and which agents tell us?" Instead
+of always running every analysis on every message, the system routes each
+message to exactly the agents that add value for it.
+
+```text
+New Message
+  ↓
+Orchestrator
+  ↓
+What do we need to know?
+  ↓
+Priority Agent / Task Agent / Summary Agent / etc.
+```
+
+**Success means**: Every incoming message is analyzed exactly as much as it
+needs — no more, no less. Trivial messages are cheap and fast; rich messages
+get full treatment; nothing irrelevant is ever computed.
+
+#### Core Orchestration Principles
+
+1. **One orchestration layer.** All routing decisions (what to analyze, and
+   in what order) live in the Orchestrator. Services, endpoints, webhooks,
+   and the dashboard MUST NOT call agents directly or decide on their own
+   whether an agent runs. Messy scattered AI calls are forbidden.
+2. **Minimal analysis per message.** The Orchestrator MUST select the
+   smallest set of agents that can fully serve the message. Full analysis
+   is the default ONLY when the Orchestrator cannot decide confidently — it
+   is never the first choice.
+3. **Priority is never optional.** Priority classification runs for every
+   message; every inbox and dashboard view depends on it. If no other agent
+   is selected, priority still runs.
+4. **Trivial messages are cheap.** Messages with no actionable content
+   (greetings, "ok", social chatter) MUST be routed to minimal analysis
+   (priority + summary only) — no task extraction, no deadline detection,
+   no elaborate recommendation.
+5. **Decisions are explainable.** Every routing decision MUST be recorded in
+   the stored analysis (a `routing` note naming which agents ran and why), so
+   users and developers can see why a message got light or full treatment.
+   This extends Principle III (AI is Assistive, Not Magical).
+6. **Rule-based first, LLM only when needed.** The Orchestrator SHOULD route
+   with cheap, deterministic signals (channel, sender, content length,
+   presence of action/time-trigger keywords) before spending any LLM budget.
+   It is a router for AI, not a new AI agent that needs its own model call.
+7. **One path only.** This is NOT a multi-agent framework: no orchestration
+   SDK, no agent-to-agent messaging, no conversation graphs, no runtime. ONE
+   orchestrator function, ONE decision path. If the design needs more than
+   that, the feature is too complex (Principle I).
+
+#### What the Orchestrator MUST Decide
+
+1. **Whether to analyze at all.** Messages with no analyzable content
+   (media-only with empty text, empty content, or out-of-scope channels)
+   MAY be stored and shown without AI analysis, with `status` set
+   accordingly. A skipped message MUST still appear on the dashboard and
+   MUST never block ingestion.
+2. **Which agents to run.** From the five available agents, the Orchestrator
+   MUST select the required subset for this message:
+   - **Priority Agent**: always — never skipped.
+   - **Summary Agent**: every message except trivial one-liners where the
+     summary would just duplicate the content.
+   - **Task Extraction**: only when the message plausibly requests an action
+     (contains a task-trigger verb or keyword: send, review, submit,
+     confirm, prepare, call, ...).
+   - **Deadline Detection**: only when a time expression is present
+     ("tonight", "tomorrow", "by Friday", ...).
+   - **Recommended Action**: only when the message warrants a next step;
+     otherwise the honest fallback ("Review this message").
+3. **The order of execution.** Priority first, Recommended Action last.
+   The Orchestrator fixes the order; individual agents MUST NOT reorder
+   themselves or the stages around them.
+4. **The fallback for every selected agent.** A selected-but-failed agent
+   stores its documented fallback value; an intentionally skipped agent
+   stores the skip reason in the `routing` note. The two MUST be
+   distinguishable in the stored record so debugging stays honest.
+5. **Whether the LLM call is needed at all.** If routing determines no
+   analysis is worth an API call (trivial/empty content), the message MUST
+   be stored with deterministic low-cost defaults instead of spending
+   tokens. When the LLM IS needed, it remains exactly one round-trip.
+
+#### What the Orchestrator MUST NOT Do
+
+- **NEVER let AI be called from outside the Orchestrator.** No service,
+  endpoint, webhook, or dashboard component invokes an agent on its own;
+  all AI access goes through the Orchestrator. This is the "one clear
+  orchestration layer" rule.
+- **NEVER fabricate an agent's output.** Skipping Task Extraction means
+  `tasks_extracted: []` — not a guessed task. A skipped agent must never
+  produce invented tasks, deadlines, or action plans.
+- **NEVER spend extra LLM round-trips on orchestration.** Adding a routing
+  decision MUST NOT multiply API calls. Routing comes from deterministic
+  rules or rides inside the existing single analysis call (Complete AI
+  Pipeline rules).
+- **NEVER build a multi-agent framework.** No second orchestrator, no
+  agent-to-agent messaging, no external orchestration SDK, no runtime. One
+  function, one path.
+- **NEVER let an agent choose its own execution.** An agent MUST NOT decide
+  to run itself, skip itself, or reorder itself. Routing authority belongs
+  to the Orchestrator alone.
+- **NEVER degrade what must always hold.** Priority is never skipped. User
+  isolation, source normalization (Day 23), and persistence apply to every
+  message the Orchestrator routes — exactly as before.
+- **NEVER hide the decision.** Light treatment of a message MUST be
+  visible in its stored `routing` note — it must never look like a bug.
+
+#### Quality Bar for the AI Orchestrator
+
+- **Routing coverage**: 100% of incoming messages flow through the
+  Orchestrator; zero direct agent calls exist outside it (grep-verifiable).
+- **Decision accuracy**: ≥ 90% of a labeled set of 50 messages are routed to
+  the correct agent subset (trivial messages get no task extraction; action
+  messages get task extraction).
+- **Priority completeness**: 100% of analyzed messages carry a priority
+  value.
+- **Cost discipline**: The Orchestrator adds ZERO extra LLM round-trips;
+  total pipeline latency stays within the existing ≤ 10 second budget.
+- **No fabrication**: Skipped agents store documented fallbacks plus a
+  `routing` note with the skip reason; 0 tolerance for invented tasks,
+  deadlines, or recommended actions.
+- **Explainability**: Every stored analysis includes a `routing` note naming
+  the agents that ran and the trigger for the decision.
+- **No regression**: The end-to-end flow (WhatsApp webhook → Orchestrator →
+  selected agents → MongoDB → dashboard) still produces correct cards, and
+  simulate messages behave identically.
+
 ### Auth Pages UI/UX Principles
 
 Both `/login` and `/signup` share one visual system built on Tailwind CSS +
@@ -1429,7 +1581,7 @@ A feature is DONE when:
 
 ### Complete Pipeline Targets
 
-- End-to-end flow verified: message → all five agents → MongoDB → dashboard card
+- End-to-end flow verified: message → Orchestrator → selected agents → MongoDB → dashboard card
 - Total pipeline latency ≤ 10 seconds per message (LLM call dominates; UI shows loading state)
 - Zero duplicate documents when a message is reprocessed
 - Every NEEDS ATTENTION flag carries a truthful "Why it matters" explanation
@@ -1491,7 +1643,7 @@ Before merging any feature branch, verify:
 - [ ] Relative time expressions preserved as-is when exact conversion is unreliable
 - [ ] Recommended actions reflect the message content (no invented actions)
 - [ ] Recommended actions are single, concise, verb-first strings
-- [ ] Full pipeline runs on every incoming message (five agents, fixed order)
+- [ ] Every incoming message is routed by the AI Orchestrator; selected agents run in fixed order (Priority first, Recommended Action last)
 - [ ] Complete analysis persisted to MongoDB in one document; dashboard reads stored data only
 - [ ] NEEDS ATTENTION flags derive from agent signals and always include a "Why it matters" line
 - [ ] Reprocessing a message never creates duplicates
@@ -1547,5 +1699,10 @@ Before merging any feature branch, verify:
 - [ ] `user_id` for webhook-derived messages is resolved server-side from verified credentials, never from query parameters or body
 - [ ] No WhatsApp-specific fields (`text.body`, `wa_id`) are referenced by the AI pipeline, storage layer, or dashboard
 - [ ] Simulated messages continue to flow through the same normalized ingest path without regression
+- [ ] Every incoming message flows through the single AI Orchestrator; zero direct agent calls exist outside it
+- [ ] The Orchestrator routes each message to the minimal agent subset it needs; Priority is never skipped
+- [ ] Orchestration adds zero extra LLM round-trips; total pipeline latency stays within the ≤ 10 second budget
+- [ ] Skipped agents store documented fallback values and an explainable `routing` note; no fabricated outputs
+- [ ] The Orchestration layer is a single function/path — no multi-agent framework, no scattered AI calls
 
-**Version**: 1.11.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-28
+**Version**: 1.12.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-29

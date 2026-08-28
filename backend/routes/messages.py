@@ -11,7 +11,7 @@ from models.message import (
     MessageResponse,
     message_doc_to_response,
 )
-from services.ai import analyze_message
+from services.ai import process_message
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -31,7 +31,7 @@ async def create_message(
     result = await messages_collection.insert_one(doc)
     doc["_id"] = result.inserted_id
 
-    ai_analysis = await analyze_message(payload.content, message_id=str(result.inserted_id), user_id=str(current_user["_id"]))
+    ai_analysis = await process_message(payload.content, message_id=str(result.inserted_id), user_id=str(current_user["_id"]))
     await messages_collection.update_one(
         {"_id": result.inserted_id},
         {"$set": {"ai_analysis": ai_analysis}},

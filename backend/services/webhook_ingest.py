@@ -7,7 +7,7 @@ from fastapi import BackgroundTasks
 from pymongo.errors import DuplicateKeyError
 
 from database import messages_collection
-from services.ai import analyze_message
+from services.ai import process_message
 
 logger = logging.getLogger(__name__)
 
@@ -17,11 +17,12 @@ async def _analyze_and_store(content: str, message_id: str, user_id: str) -> Non
 
     Runs as a background task after the webhook acknowledgement so delivery
     stays fast, mirroring how POST /messages persists ``ai_analysis``.
-    ``analyze_message`` never raises (it degrades to fallback values), but we
-    guard persistence independently so a DB hiccup cannot crash the task.
+    ``process_message`` never raises (it degrades to a rule-based stub or
+    fallback values), but we guard persistence independently so a DB hiccup
+    cannot crash the task.
     """
     try:
-        analysis = await analyze_message(
+        analysis = await process_message(
             content, message_id=message_id, user_id=user_id
         )
     except Exception as exc:

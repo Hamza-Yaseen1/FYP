@@ -27,7 +27,7 @@ def _fake_ai(monkeypatch):
             "status": "completed",
         }
 
-    monkeypatch.setattr("services.webhook_ingest.analyze_message", fake_analyze)
+    monkeypatch.setattr("services.webhook_ingest.process_message", fake_analyze)
 
 
 def _signature(body: bytes, secret: str = TEST_SECRET) -> str:
@@ -263,6 +263,109 @@ def test_simulate_endpoint_ingests_with_source(client, sync_db, _fake_ai):
     assert doc["message_type"] == "text"
 
 
+def test_simulate_ingest_routes_through_orchestrator(client, sync_db, monkeypatch):
+    import services.webhook_ingest as webhook_ingest_mod
+
+    calls = []
+
+    async def fake_process(content, message_id=None, user_id=None, message_type="text"):
+        calls.append({"content": content, "message_id": message_id, "user_id": user_id})
+        return {
+            "priority": "normal",
+            "confidence": 0.0,
+            "explanation": "stubbed",
+            "summary": "stubbed summary",
+            "recommended_action": "",
+            "recommended_actions": [],
+            "tasks_extracted": [],
+            "deadlines": [],
+            "provider": "stub",
+            "analyzed_at": None,
+            "status": "completed",
+        }
+
+    monkeypatch.setattr("services.webhook_ingest.process_message", fake_process)
+
+    res = client.post(
+        "/auth/register",
+        json={"name": "Orch User", "email": "webhook-orch@example.com", "password": "s3cretpass"},
+    )
+    assert res.status_code == 201
+    uid = res.json()["id"]
+
+    res = _simulate_post(client, message="Send me the slides tonight.")
+    assert res.status_code == 200
+
+    assert len(calls) == 1
+    assert calls[0]["content"] == "Send me the slides tonight."
+    assert calls[0]["user_id"] == uid
+    assert not hasattr(webhook_ingest_mod, "analyze_message")
+
+
+def test_simulate_background_persists_ai_analysis_with_routing(
+    client, sync_db, monkeypatch
+):
+    class _FakeResult:
+        priority = "important"
+        confidence = 0.7
+        explanation = "e2e explanation"
+        summary = "e2e summary"
+        recommended_actions = ["Follow up"]
+        tasks_extracted = []
+        deadlines = ["tomorrow"]
+
+    class _FakeProvider:
+        async def analyze(self, message):
+            return _FakeResult()
+
+    monkeypatch.setattr(
+        "services.ai.analyzer.get_provider", lambda: _FakeProvider()
+    )
+
+    res = client.post(
+        "/auth/register",
+        json={"name": "US3 User", "email": "us3-sim@example.com", "password": "s3cretpass"},
+    )
+    assert res.status_code == 201
+    uid = res.json()["id"]
+
+    res = _simulate_post(client, message="Send me the slides tonight")
+    assert res.status_code == 200
+
+    doc = sync_db.messages.find_one({"user_id": uid, "source": "simulate"})
+    assert doc is not None
+    ai = doc.get("ai_analysis") or {}
+    for field in (
+        "priority",
+        "confidence",
+        "explanation",
+        "summary",
+        "recommended_action",
+        "recommended_actions",
+        "tasks_extracted",
+        "deadlines",
+        "needs_attention",
+        "attention_reason",
+        "provider",
+        "analyzed_at",
+        "status",
+    ):
+        assert field in ai, f"missing stored field: {field}"
+
+    routing = ai["routing"]
+    assert routing["agents_run"] == [
+        "priority",
+        "summary",
+        "task_extraction",
+        "deadline_detection",
+        "recommended_action",
+    ]
+    assert routing["agents_skipped"] == []
+    assert routing["llm_call_used"] is True
+    assert routing["skip_reason"] == "full"
+    assert routing["decided_at"] is not None
+
+
 def test_simulate_requires_auth(client):
     client.cookies.clear()
     assert _simulate_post(client).status_code == 401
@@ -333,7 +436,7 @@ def test_duplicate_does_not_reanalyze(client, sync_db, monkeypatch):
             "status": "completed",
         }
 
-    monkeypatch.setattr("services.webhook_ingest.analyze_message", fake_analyze)
+    monkeypatch.setattr("services.webhook_ingest.process_message", fake_analyze)
 
     _register_with_whatsapp(client, "webhook-dup2@example.com")
     payload = _meta_object_payload(

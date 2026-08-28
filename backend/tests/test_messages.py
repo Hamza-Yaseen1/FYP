@@ -382,3 +382,127 @@ class TestUserIsolation:
         assert res.status_code == 200
         data = res.json()
         assert len(data["sources"]) == 0
+
+
+class TestCreateMessageRouting:
+    """Test POST /messages funnels AI analysis through the Orchestrator."""
+
+    def test_create_message_routes_through_orchestrator(self, client, sync_db, monkeypatch):
+        import routes.messages as messages_mod
+
+        calls = []
+
+        async def fake_process(content, message_id=None, user_id=None, message_type="text"):
+            calls.append({"content": content, "message_id": message_id})
+            return {
+                "priority": "normal",
+                "confidence": 0.0,
+                "explanation": "stubbed",
+                "summary": "stubbed summary",
+                "recommended_action": "",
+                "recommended_actions": [],
+                "tasks_extracted": [],
+                "deadlines": [],
+                "provider": "stub",
+                "analyzed_at": datetime.now(timezone.utc),
+                "status": "completed",
+                "routing": {
+                    "agents_run": ["priority", "summary"],
+                    "agents_skipped": [],
+                    "skip_reason": "test",
+                    "triggers": [],
+                    "llm_call_used": True,
+                    "decided_at": datetime.now(timezone.utc),
+                },
+            }
+
+        monkeypatch.setattr("routes.messages.process_message", fake_process)
+        register(client)
+
+        res = client.post(
+            "/messages",
+            json={
+                "sender": "Ali",
+                "content": "Send me the slides tonight",
+                "source": "simulated",
+            },
+        )
+        assert res.status_code == 201
+        assert len(calls) == 1
+        assert calls[0]["content"] == "Send me the slides tonight"
+        assert calls[0]["message_id"] is not None
+        assert res.json()["ai_analysis"]["priority"] == "normal"
+        assert res.json()["ai_analysis"]["routing"]["skip_reason"] == "test"
+        assert not hasattr(messages_mod, "analyze_message")
+
+
+class _US3FakeResult:
+    priority = "important"
+    confidence = 0.7
+    explanation = "e2e explanation"
+    summary = "e2e summary"
+    recommended_actions = ["Follow up with Ali"]
+    tasks_extracted = []
+    deadlines = ["tomorrow"]
+
+
+class _US3FakeProvider:
+    async def analyze(self, message):
+        return _US3FakeResult()
+
+
+class TestUS3RoutingContract:
+    """US3: the stored/returned ai_analysis keeps its legacy shape plus routing."""
+
+    LEGACY_FIELDS = (
+        "priority",
+        "confidence",
+        "explanation",
+        "summary",
+        "recommended_action",
+        "recommended_actions",
+        "tasks_extracted",
+        "deadlines",
+        "needs_attention",
+        "attention_reason",
+        "provider",
+        "analyzed_at",
+        "status",
+    )
+
+    def test_create_message_response_retains_legacy_fields_and_routing(
+        self, client, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "services.ai.analyzer.get_provider", lambda: _US3FakeProvider()
+        )
+        register(client)
+
+        res = client.post(
+            "/messages",
+            json={
+                "sender": "Ali",
+                "content": "Send me the slides tonight",
+                "source": "simulated",
+            },
+        )
+        assert res.status_code == 201
+        ai = res.json()["ai_analysis"]
+        for field in self.LEGACY_FIELDS:
+            assert field in ai, f"missing legacy field: {field}"
+        assert ai["provider"] == "groq"
+        assert ai["status"] == "completed"
+
+        routing = ai["routing"]
+        assert routing["agents_run"] == [
+            "priority",
+            "summary",
+            "task_extraction",
+            "deadline_detection",
+            "recommended_action",
+        ]
+        assert routing["agents_skipped"] == []
+        assert routing["skip_reason"] == "full"
+        assert routing["triggers"]
+        assert routing["llm_call_used"] is True
+        assert routing["decided_at"] is not None

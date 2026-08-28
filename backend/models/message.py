@@ -5,6 +5,15 @@ from typing import Optional
 from models.task import ExtractedTask
 
 
+class RoutingRecord(BaseModel):
+    agents_run: list[str] = []
+    agents_skipped: list[str] = []
+    skip_reason: str = ""
+    triggers: list[str] = []
+    llm_call_used: bool = False
+    decided_at: datetime
+
+
 class AIAnalysis(BaseModel):
     priority: str = "pending"
     confidence: float = 0.0
@@ -19,6 +28,7 @@ class AIAnalysis(BaseModel):
     provider: str = "unknown"
     analyzed_at: Optional[datetime] = None
     status: str = "pending"
+    routing: Optional[RoutingRecord] = None
 
 
 class MessageCreate(BaseModel):

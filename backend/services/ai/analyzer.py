@@ -5,6 +5,7 @@ from bson import ObjectId
 from .providers.base import BaseLLMProvider, AIAnalysisResult
 from .providers.groq import GroqProvider
 from .attention import evaluate_attention
+from .routing import RoutingDecision
 from database import tasks_collection
 
 logger = logging.getLogger(__name__)
@@ -14,7 +15,34 @@ def get_provider() -> BaseLLMProvider:
     return GroqProvider()
 
 
-async def analyze_message(message_content: str, message_id: str = None, user_id: str = None) -> dict:
+def _gate_outputs(analysis: dict, routing: RoutingDecision | None) -> dict:
+    """Clear outputs of agents the Orchestrator skipped.
+
+    A skipped agent keeps its documented fallback (empty tasks/deadlines,
+    empty recommendation) so nothing is ever invented by routing. The
+    provided ``analysis`` dict is mutated and returned.
+    """
+    if routing is None:
+        return analysis
+    if not routing.run_summary:
+        analysis["summary"] = None
+    if not routing.run_task_extraction:
+        analysis["tasks_extracted"] = []
+    if not routing.run_deadline_detection:
+        analysis["deadlines"] = []
+    if not routing.run_recommended_action:
+        analysis["recommended_action"] = ""
+        analysis["recommended_actions"] = []
+    return analysis
+
+
+async def analyze_message(
+    message_content: str,
+    message_id: str = None,
+    user_id: str = None,
+    run_tasks: bool = True,
+    routing: RoutingDecision | None = None,
+) -> dict:
     provider = get_provider()
 
     try:
@@ -40,6 +68,10 @@ async def analyze_message(message_content: str, message_id: str = None, user_id:
             "status": "completed",
         }
 
+        # Gate skipped agents FIRST, then compute attention on the stored
+        # state so flags reflect what is actually kept.
+        _gate_outputs(analysis, routing)
+
         analysis.update(evaluate_attention(analysis))
 
         logger.info(
@@ -47,13 +79,13 @@ async def analyze_message(message_content: str, message_id: str = None, user_id:
             message_id or "(unsaved)",
             analysis["priority"],
             bool(analysis["summary"]),
-            len(result.tasks_extracted),
-            len(result.deadlines),
-            bool(recommendation),
+            len(analysis["tasks_extracted"]),
+            len(analysis["deadlines"]),
+            bool(analysis["recommended_action"]),
             analysis["needs_attention"],
         )
 
-        if message_id and result.tasks_extracted:
+        if message_id and run_tasks and result.tasks_extracted:
             if not user_id:
                 logger.warning(
                     "Skipping task creation for message %s: no user_id provided",

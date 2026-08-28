@@ -167,7 +167,7 @@ class TestIsolation:
                 "status": "completed",
             }
 
-        monkeypatch.setattr("routes.messages.analyze_message", fake_analyze)
+        monkeypatch.setattr("routes.messages.process_message", fake_analyze)
 
     def _register(self, client, email):
         res = client.post(
