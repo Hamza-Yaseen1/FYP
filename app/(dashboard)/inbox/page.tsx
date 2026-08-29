@@ -256,6 +256,7 @@ export default function InboxPage() {
 function MessageCard({ message: msg }: { message: Message }) {
   const analysis = msg.ai_analysis;
   const timeAgo = getTimeAgo(msg.created_at);
+  const confidence = analysis?.confidence ? Math.round(analysis.confidence * 100) : null;
 
   return (
     <article className="rounded-xl border bg-card p-4 transition-colors hover:border-white/10">
@@ -274,11 +275,9 @@ function MessageCard({ message: msg }: { message: Message }) {
                 Unread
               </span>
             )}
-          </div>
-          {analysis && (
-            <div className="mt-1.5">
+            {analysis && (
               <span
-                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
                   analysis.priority === "urgent"
                     ? "bg-red-500/15 text-red-400"
                     : analysis.priority === "important"
@@ -290,13 +289,29 @@ function MessageCard({ message: msg }: { message: Message }) {
               >
                 {analysis.priority}
               </span>
-            </div>
-          )}
-          <p className="mt-2 text-sm leading-relaxed text-foreground/90 line-clamp-2">
+            )}
+            {confidence !== null && (
+              <span className="text-[10px] text-muted-foreground">
+                {confidence}%
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-sm leading-relaxed text-foreground/90">
             {msg.content}
           </p>
           {analysis?.summary && (
-            <p className="mt-2 text-xs text-muted-foreground">{analysis.summary}</p>
+            <div className="mt-2 rounded-lg bg-secondary/50 p-2">
+              <p className="text-xs text-muted-foreground">
+                <span className="font-semibold">Summary:</span> {analysis.summary}
+              </p>
+            </div>
+          )}
+          {analysis?.recommended_action && (
+            <div className="mt-2 rounded-lg bg-blue-500/10 p-2">
+              <p className="text-xs text-blue-400">
+                <span className="font-semibold">Recommended Action:</span> {analysis.recommended_action}
+              </p>
+            </div>
           )}
         </div>
         <div className="shrink-0 text-xs text-muted-foreground">{timeAgo}</div>
