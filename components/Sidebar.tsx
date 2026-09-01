@@ -9,10 +9,8 @@ import {
   CheckSquare,
   Link2,
   Settings,
-  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Separator } from "@/components/ui/separator";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
@@ -33,46 +31,60 @@ export default function Sidebar({ className, onNavigate }: SidebarProps) {
 
   return (
     <div className={cn("flex h-full flex-col", className)}>
-      {/* Logo */}
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
-          <Zap size={16} className="text-primary-foreground" />
-        </div>
-        <span className="text-base font-semibold tracking-tight">
-          Communication AI
+      {/* Brand */}
+      <div className="flex items-center gap-3 px-5 pt-6 pb-5">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground">
+          S
         </span>
+        <div className="leading-tight">
+          <span className="block text-[15px] font-semibold tracking-tight">
+            Signal Desk
+          </span>
+          <span className="text-xs text-muted-foreground">
+            Communication triage
+          </span>
+        </div>
       </div>
 
-      <Separator />
-
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="flex-1 space-y-0.5 px-3 py-2">
+        <p className="triage-label px-3 pb-2 pt-1 text-muted-foreground/70">
+          Menu
+        </p>
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive =
+            pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link
               key={item.href}
               href={item.href}
               onClick={onNavigate}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
               )}
             >
-              <item.icon size={18} strokeWidth={isActive ? 2 : 1.5} />
+              <item.icon
+                size={17}
+                className={cn(
+                  "shrink-0 transition-colors",
+                  isActive
+                    ? "text-primary"
+                    : "text-muted-foreground/70 group-hover:text-foreground"
+                )}
+              />
               {item.label}
             </Link>
           );
         })}
       </nav>
 
-      <Separator />
-
       {/* Footer */}
-      <div className="px-5 py-4">
-        <p className="text-xs text-muted-foreground">v1.0.0</p>
+      <div className="border-t border-border px-5 py-4">
+        <p className="triage-label text-muted-foreground/60">v1.0.0</p>
       </div>
     </div>
   );

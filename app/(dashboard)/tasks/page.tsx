@@ -7,10 +7,10 @@ export const metadata: Metadata = {
 
 export default function TasksPage() {
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold tracking-tight">My Tasks</h1>
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+      <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">My Tasks</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Tasks extracted from your messages, sorted by priority.
+        Pulled from your messages, sorted by priority
       </p>
       <div className="mt-6">
         <TaskList />

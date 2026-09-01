@@ -33,6 +33,12 @@ async def lifespan(app: FastAPI):
         unique=True,
         partialFilterExpression={"external_message_id": {"$type": "string"}},
     )
+    await messages_collection.create_index(
+        [("user_id", 1), ("conversationId", 1), ("received_at", -1)]
+    )
+    await messages_collection.create_index(
+        [("user_id", 1), ("threadId", 1), ("received_at", -1)]
+    )
     await tasks_collection.create_index([("user_id", 1), ("created_at", -1)])
     await connections_collection.create_index(
         [("user_id", 1), ("provider", 1)],

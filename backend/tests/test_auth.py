@@ -152,7 +152,7 @@ class TestLoginContract:
 class TestIsolation:
     @pytest.fixture(autouse=True)
     def _mock_ai(self, monkeypatch):
-        async def fake_analyze(content, message_id=None, user_id=None):
+        async def fake_analyze(content, message_id=None, user_id=None, thread_id=None):
             return {
                 "priority": "normal",
                 "confidence": 0.9,

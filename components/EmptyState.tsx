@@ -48,9 +48,11 @@ export default function EmptyState({
   const Icon = config.icon;
 
   return (
-    <div className={`flex flex-col items-center justify-center rounded-xl border border-dashed py-16 ${className ?? ""}`}>
-      <Icon className="size-10 text-muted-foreground/50" />
-      <h3 className="mt-4 text-sm font-medium text-foreground">{config.title}</h3>
+    <div className={`flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 ${className ?? ""}`}>
+      <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+        <Icon className="size-5 text-muted-foreground" />
+      </div>
+      <h3 className="mt-4 text-sm font-semibold">{config.title}</h3>
       <p className="mt-1 text-sm text-muted-foreground">{config.description}</p>
       {config.action && (
         <button

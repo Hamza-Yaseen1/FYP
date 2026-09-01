@@ -4,6 +4,7 @@ import json
 import logging
 from groq import AsyncGroq
 from .base import BaseLLMProvider, AIAnalysisResult
+from ..context import build_context_block
 
 logger = logging.getLogger(__name__)
 
@@ -154,9 +155,20 @@ class GroqProvider(BaseLLMProvider):
         cleaned = clean_response(raw_content)
         return json.loads(cleaned)
 
-    async def analyze(self, message: str) -> AIAnalysisResult:
+    async def analyze(
+        self,
+        message: str,
+        context: list[dict] | None = None,
+        current_message_id: str | None = None,
+    ) -> AIAnalysisResult:
         # NOTE: .replace, NOT .format — messages may contain braces.
-        prompt = ANALYSIS_PROMPT.replace("{message}", message)
+        prompt = ANALYSIS_PROMPT
+        block = build_context_block(context, current_message_id) if context else None
+        if block:
+            prompt = prompt.replace(
+                "MESSAGE TO ANALYZE:", block + "\n\nMESSAGE TO ANALYZE:"
+            )
+        prompt = prompt.replace("{message}", message)
 
         result = await self._complete(prompt)
 
@@ -195,6 +207,7 @@ class GroqProvider(BaseLLMProvider):
             recommended_actions=[action] if action else [],
             tasks_extracted=tasks,
             deadlines=result.get("deadlines", []) or [],
+            context_updates=result.get("context_updates", []) or [],
         )
 
     def _load_prompt(self, filename: str) -> str:

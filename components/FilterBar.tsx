@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, X, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface FilterOption {
   value: string;
@@ -26,6 +27,16 @@ interface FilterBarProps {
   className?: string;
 }
 
+const triggerBase =
+  "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors";
+const triggerIdle =
+  "border-border bg-card text-muted-foreground hover:text-foreground";
+const triggerActive =
+  "border-primary/40 bg-primary/10 text-primary";
+
+const panelBase =
+  "absolute left-0 top-full z-10 mt-1.5 w-44 overflow-hidden rounded-lg border border-border bg-card p-1 shadow-md";
+
 export default function FilterBar({
   sources,
   priorities,
@@ -47,190 +58,121 @@ export default function FilterBar({
 
   const hasActiveFilters = selectedSource || selectedPriority || selectedSender || startDate || endDate;
 
+  const renderOptions = (
+    options: FilterOption[],
+    selected: string | null,
+    allLabel: string,
+    onSelect: (value: string | null) => void
+  ) => (
+    <div className={panelBase}>
+      <button
+        onClick={() => {
+          onSelect(null);
+          setOpenDropdown(null);
+        }}
+        className={cn(
+          "w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors hover:bg-muted",
+          !selected && "bg-accent font-medium"
+        )}
+      >
+        {allLabel}
+      </button>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          onClick={() => {
+            onSelect(option.value);
+            setOpenDropdown(null);
+          }}
+          className={cn(
+            "w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors hover:bg-muted",
+            selected === option.value && "bg-accent font-medium"
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
       {/* Source Filter */}
       <div className="relative">
         <button
           onClick={() => setOpenDropdown(openDropdown === "source" ? null : "source")}
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors",
-            selectedSource
-              ? "border-primary/50 bg-primary/10 text-primary"
-              : "border-border bg-background text-muted-foreground hover:text-foreground"
-          )}
+          className={cn(triggerBase, selectedSource ? triggerActive : triggerIdle)}
         >
           Source
           <ChevronDown className="size-3" />
         </button>
-        {openDropdown === "source" && (
-          <div className="absolute left-0 top-full z-10 mt-1 w-40 rounded-lg border bg-card shadow-lg">
-            <button
-              onClick={() => {
-                onSourceChange(null);
-                setOpenDropdown(null);
-              }}
-              className={cn(
-                "w-full px-3 py-2 text-left text-sm hover:bg-muted",
-                !selectedSource && "font-medium text-primary"
-              )}
-            >
-              All Sources
-            </button>
-            {sources.map((source) => (
-              <button
-                key={source.value}
-                onClick={() => {
-                  onSourceChange(source.value);
-                  setOpenDropdown(null);
-                }}
-                className={cn(
-                  "w-full px-3 py-2 text-left text-sm hover:bg-muted",
-                  selectedSource === source.value && "font-medium text-primary"
-                )}
-              >
-                {source.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {openDropdown === "source" &&
+          renderOptions(sources, selectedSource, "All sources", onSourceChange)}
       </div>
 
       {/* Priority Filter */}
       <div className="relative">
         <button
           onClick={() => setOpenDropdown(openDropdown === "priority" ? null : "priority")}
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors",
-            selectedPriority
-              ? "border-primary/50 bg-primary/10 text-primary"
-              : "border-border bg-background text-muted-foreground hover:text-foreground"
-          )}
+          className={cn(triggerBase, selectedPriority ? triggerActive : triggerIdle)}
         >
           Priority
           <ChevronDown className="size-3" />
         </button>
-        {openDropdown === "priority" && (
-          <div className="absolute left-0 top-full z-10 mt-1 w-40 rounded-lg border bg-card shadow-lg">
-            <button
-              onClick={() => {
-                onPriorityChange(null);
-                setOpenDropdown(null);
-              }}
-              className={cn(
-                "w-full px-3 py-2 text-left text-sm hover:bg-muted",
-                !selectedPriority && "font-medium text-primary"
-              )}
-            >
-              All Priorities
-            </button>
-            {priorities.map((priority) => (
-              <button
-                key={priority.value}
-                onClick={() => {
-                  onPriorityChange(priority.value);
-                  setOpenDropdown(null);
-                }}
-                className={cn(
-                  "w-full px-3 py-2 text-left text-sm hover:bg-muted",
-                  selectedPriority === priority.value && "font-medium text-primary"
-                )}
-              >
-                {priority.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {openDropdown === "priority" &&
+          renderOptions(priorities, selectedPriority, "All priorities", onPriorityChange)}
       </div>
 
       {/* Sender Filter */}
       <div className="relative">
         <button
           onClick={() => setOpenDropdown(openDropdown === "sender" ? null : "sender")}
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors",
-            selectedSender
-              ? "border-primary/50 bg-primary/10 text-primary"
-              : "border-border bg-background text-muted-foreground hover:text-foreground"
-          )}
+          className={cn(triggerBase, selectedSender ? triggerActive : triggerIdle)}
         >
           Sender
           <ChevronDown className="size-3" />
         </button>
-        {openDropdown === "sender" && (
-          <div className="absolute left-0 top-full z-10 mt-1 w-40 rounded-lg border bg-card shadow-lg">
-            <button
-              onClick={() => {
-                onSenderChange(null);
-                setOpenDropdown(null);
-              }}
-              className={cn(
-                "w-full px-3 py-2 text-left text-sm hover:bg-muted",
-                !selectedSender && "font-medium text-primary"
-              )}
-            >
-              All Senders
-            </button>
-            {senders.map((sender) => (
-              <button
-                key={sender.value}
-                onClick={() => {
-                  onSenderChange(sender.value);
-                  setOpenDropdown(null);
-                }}
-                className={cn(
-                  "w-full px-3 py-2 text-left text-sm hover:bg-muted",
-                  selectedSender === sender.value && "font-medium text-primary"
-                )}
-              >
-                {sender.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {openDropdown === "sender" &&
+          renderOptions(senders, selectedSender, "All senders", onSenderChange)}
       </div>
 
       {/* Date Range Filter */}
       <div className="relative">
         <button
           onClick={() => setShowDateRange(!showDateRange)}
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors",
-            startDate || endDate
-              ? "border-primary/50 bg-primary/10 text-primary"
-              : "border-border bg-background text-muted-foreground hover:text-foreground"
-          )}
+          className={cn(triggerBase, startDate || endDate ? triggerActive : triggerIdle)}
         >
           <Calendar className="size-3" />
           Date Range
         </button>
         {showDateRange && (
-          <div className="absolute left-0 top-full z-10 mt-1 w-64 rounded-lg border bg-card p-3 shadow-lg">
-            <div className="space-y-2">
-              <div>
+          <div className="absolute left-0 top-full z-10 mt-1.5 w-64 rounded-lg border border-border bg-card p-3 shadow-md">
+            <div className="space-y-3">
+              <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">From</label>
                 <input
                   type="date"
                   value={startDate || ""}
                   onChange={(e) => onStartDateChange(e.target.value || null)}
-                  className="mt-1 w-full rounded-md border bg-background px-2 py-1 text-sm"
+                  className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 />
               </div>
-              <div>
+              <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">To</label>
                 <input
                   type="date"
                   value={endDate || ""}
                   onChange={(e) => onEndDateChange(e.target.value || null)}
-                  className="mt-1 w-full rounded-md border bg-background px-2 py-1 text-sm"
+                  className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 />
               </div>
-              <button
+              <Button
+                size="sm"
                 onClick={() => setShowDateRange(false)}
-                className="w-full rounded-md bg-primary px-2 py-1 text-sm text-primary-foreground hover:bg-primary/80"
+                className="w-full"
               >
                 Apply
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -238,7 +180,9 @@ export default function FilterBar({
 
       {/* Clear Filters */}
       {hasActiveFilters && (
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => {
             onSourceChange(null);
             onPriorityChange(null);
@@ -246,11 +190,10 @@ export default function FilterBar({
             onStartDateChange(null);
             onEndDateChange(null);
           }}
-          className="flex items-center gap-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
           <X className="size-3" />
           Clear filters
-        </button>
+        </Button>
       )}
     </div>
   );

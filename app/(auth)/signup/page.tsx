@@ -98,15 +98,17 @@ export default function SignupPage() {
   return (
     <Card>
       <CardHeader className="text-center">
-        <CardTitle className="text-xl">Create an account</CardTitle>
-        <CardDescription>Get started with Communication AI</CardDescription>
+        <CardTitle className="text-xl font-semibold tracking-tight">
+          Create an account
+        </CardTitle>
+        <CardDescription>Stand up your Signal Desk</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           {serverError && (
             <div
               role="alert"
-              className="rounded-md border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm text-red-400"
+              className="rounded-lg border border-ember/25 bg-ember-dim/40 px-3 py-2 text-sm text-ember"
             >
               {serverError}
             </div>
@@ -121,7 +123,7 @@ export default function SignupPage() {
               aria-invalid={Boolean(fieldErrors.name)}
             />
             {fieldErrors.name && (
-              <p className="text-xs text-red-400">{fieldErrors.name}</p>
+              <p className="text-xs text-ember">{fieldErrors.name}</p>
             )}
           </div>
           <div className="space-y-2">
@@ -135,7 +137,7 @@ export default function SignupPage() {
               aria-invalid={Boolean(fieldErrors.email)}
             />
             {fieldErrors.email && (
-              <p className="text-xs text-red-400">{fieldErrors.email}</p>
+              <p className="text-xs text-ember">{fieldErrors.email}</p>
             )}
           </div>
           <div className="space-y-2">
@@ -149,7 +151,7 @@ export default function SignupPage() {
               aria-invalid={Boolean(fieldErrors.password)}
             />
             {fieldErrors.password && (
-              <p className="text-xs text-red-400">{fieldErrors.password}</p>
+              <p className="text-xs text-ember">{fieldErrors.password}</p>
             )}
           </div>
           <div className="space-y-2">
@@ -163,7 +165,7 @@ export default function SignupPage() {
               aria-invalid={Boolean(fieldErrors.confirmPassword)}
             />
             {fieldErrors.confirmPassword && (
-              <p className="text-xs text-red-400">
+              <p className="text-xs text-ember">
                 {fieldErrors.confirmPassword}
               </p>
             )}
@@ -178,7 +180,7 @@ export default function SignupPage() {
           Already have an account?{" "}
           <Link
             href="/login"
-            className="text-primary underline-offset-4 hover:underline"
+            className="font-medium text-primary underline-offset-4 hover:underline"
           >
             Sign in
           </Link>

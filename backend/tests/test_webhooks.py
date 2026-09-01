@@ -12,7 +12,7 @@ PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "1308658958991189")
 
 @pytest.fixture
 def _fake_ai(monkeypatch):
-    async def fake_analyze(content, message_id=None, user_id=None):
+    async def fake_analyze(content, message_id=None, user_id=None, thread_id=None):
         return {
             "priority": "normal",
             "confidence": 0.0,
@@ -268,7 +268,7 @@ def test_simulate_ingest_routes_through_orchestrator(client, sync_db, monkeypatc
 
     calls = []
 
-    async def fake_process(content, message_id=None, user_id=None, message_type="text"):
+    async def fake_process(content, message_id=None, user_id=None, message_type="text", thread_id=None):
         calls.append({"content": content, "message_id": message_id, "user_id": user_id})
         return {
             "priority": "normal",
@@ -315,7 +315,7 @@ def test_simulate_background_persists_ai_analysis_with_routing(
         deadlines = ["tomorrow"]
 
     class _FakeProvider:
-        async def analyze(self, message):
+        async def analyze(self, message, context=None):
             return _FakeResult()
 
     monkeypatch.setattr(
@@ -364,6 +364,62 @@ def test_simulate_background_persists_ai_analysis_with_routing(
     assert routing["llm_call_used"] is True
     assert routing["skip_reason"] == "full"
     assert routing["decided_at"] is not None
+
+
+def test_simulate_standalone_persists_identity_and_day24_analysis(
+    client, sync_db, monkeypatch
+):
+    """US3/FR-013: standalone simulate ingestion stores messageId, null
+    threadId/conversationId, and the unchanged Day 24 analysis + routing."""
+    class _StubResult:
+        priority = "normal"
+        confidence = 0.8
+        explanation = "t020 stub"
+        summary = "t020 summary"
+        recommended_actions = []
+        tasks_extracted = []
+        deadlines = []
+
+    class _StubProvider:
+        async def analyze(self, message, context=None):
+            return _StubResult()
+
+    monkeypatch.setattr(
+        "services.ai.analyzer.get_provider", lambda: _StubProvider()
+    )
+
+    res = client.post(
+        "/auth/register",
+        json={"name": "T020 User", "email": "webhook-t020@example.com", "password": "s3cretpass"},
+    )
+    assert res.status_code == 201
+    uid = res.json()["id"]
+
+    res = _simulate_post(client, message="Standalone note for T020.")
+    assert res.status_code == 200
+
+    doc = sync_db.messages.find_one({"user_id": uid, "source": "simulate"})
+    assert doc is not None
+    assert doc["messageId"] == str(doc["_id"])
+    assert doc.get("threadId") is None
+    assert doc.get("conversationId") is None
+
+    ai = doc.get("ai_analysis") or {}
+    assert ai["status"] == "completed"
+    assert ai["routing"]["llm_call_used"] is True
+    for field in (
+        "priority",
+        "confidence",
+        "explanation",
+        "summary",
+        "recommended_action",
+        "recommended_actions",
+        "tasks_extracted",
+        "deadlines",
+        "provider",
+        "status",
+    ):
+        assert field in ai, f"missing stored field: {field}"
 
 
 def test_simulate_requires_auth(client):
@@ -420,7 +476,7 @@ def test_post_duplicate_external_id_single_document(client, sync_db, _fake_ai):
 def test_duplicate_does_not_reanalyze(client, sync_db, monkeypatch):
     calls = []
 
-    async def fake_analyze(content, message_id=None, user_id=None):
+    async def fake_analyze(content, message_id=None, user_id=None, thread_id=None):
         calls.append(message_id)
         return {
             "priority": "normal",

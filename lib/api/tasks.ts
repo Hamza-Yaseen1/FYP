@@ -84,7 +84,15 @@ export async function snoozeTask(taskId: string, duration: string): Promise<Task
   return response.json();
 }
 
-export async function getTaskMessage(taskId: string): Promise<any> {
+export interface TaskSourceMessage {
+  id: string;
+  sender: string;
+  content: string;
+  source: string;
+  created_at: string;
+}
+
+export async function getTaskMessage(taskId: string): Promise<TaskSourceMessage> {
   const response = await fetch(`${API_BASE}/tasks/${taskId}/message`, {
     credentials: "include",
   });

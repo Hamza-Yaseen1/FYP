@@ -8,11 +8,14 @@ from pymongo.errors import DuplicateKeyError
 
 from database import messages_collection
 from services.ai import process_message
+from services.threads import resolve_and_stamp
 
 logger = logging.getLogger(__name__)
 
 
-async def _analyze_and_store(content: str, message_id: str, user_id: str) -> None:
+async def _analyze_and_store(
+    content: str, message_id: str, user_id: str, thread_id: str = None
+) -> None:
     """Run the AI pipeline for an ingested message and persist its result.
 
     Runs as a background task after the webhook acknowledgement so delivery
@@ -23,7 +26,10 @@ async def _analyze_and_store(content: str, message_id: str, user_id: str) -> Non
     """
     try:
         analysis = await process_message(
-            content, message_id=message_id, user_id=user_id
+            content,
+            message_id=message_id,
+            user_id=user_id,
+            thread_id=thread_id,
         )
     except Exception as exc:
         logger.warning("AI analyze task failed for %s: %s", message_id, exc)
@@ -58,7 +64,23 @@ async def ingest_message(
     is NOT re-run.
     """
     now = datetime.now(timezone.utc)
+    _id = ObjectId()
+    thread_id, conversation_id = None, None
+    try:
+        thread_id, conversation_id = await resolve_and_stamp(
+            user_id, source, sender, now
+        )
+    except Exception as exc:
+        logger.warning(
+            "Thread resolution failed for %s; message stored standalone: %s",
+            source,
+            exc,
+            exc_info=True,
+        )
+
     doc = {
+        "_id": _id,
+        "messageId": str(_id),
         "user_id": user_id,
         "source": source,
         "sender": sender,
@@ -70,6 +92,9 @@ async def ingest_message(
         "updated_at": now,
         "received_at": now,
     }
+    if thread_id:
+        doc["threadId"] = thread_id
+        doc["conversationId"] = conversation_id
     if external_message_id:
         doc["external_message_id"] = external_message_id
 
@@ -90,7 +115,7 @@ async def ingest_message(
 
     if background_tasks is not None:
         background_tasks.add_task(
-            _analyze_and_store, content, message_id, user_id
+            _analyze_and_store, content, message_id, user_id, thread_id
         )
 
     return message_id

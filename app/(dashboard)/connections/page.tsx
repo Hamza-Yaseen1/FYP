@@ -9,7 +9,6 @@ export default function ConnectionsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchConnections = async () => {
-    setIsLoading(true);
     try {
       const data = await getConnections();
       setConnections(data);
@@ -21,16 +20,32 @@ export default function ConnectionsPage() {
   };
 
   useEffect(() => {
-    fetchConnections();
+    let cancelled = false;
+    getConnections()
+      .then((data) => {
+        if (!cancelled) setConnections(data);
+      })
+      .catch(() => {
+        if (!cancelled) setConnections([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
-    <div className="container mx-auto py-8 px-4">
-      <h1 className="text-2xl font-bold mb-6">Connected Accounts</h1>
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+      <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Connected Accounts</h1>
+      <p className="mt-1 text-sm text-muted-foreground">Channels wired into your desk</p>
       {isLoading ? (
-        <p className="text-gray-500">Loading connections...</p>
+        <p className="mt-6 text-muted-foreground">Loading connections...</p>
       ) : (
-        <ConnectionList connections={connections} onRefresh={fetchConnections} />
+        <div className="mt-6">
+          <ConnectionList connections={connections} onRefresh={fetchConnections} />
+        </div>
       )}
     </div>
   );

@@ -18,7 +18,7 @@ REGISTER_B = {"name": "User B", "email": "isolation-b@test.com", "password": "pa
 TASK_CONTENT = "Please review the quarterly report and send feedback by Friday"
 
 
-async def _fake_analyze(message_content, message_id=None, user_id=None):
+async def _fake_analyze(message_content, message_id=None, user_id=None, thread_id=None):
     tasks = []
     if "review" in message_content.lower():
         tasks.append({
@@ -308,7 +308,7 @@ class TestUserIsolation:
     # ── US4: Webhook Messages Are Scoped to Owner ──────────────────
 
     def test_webhook_message_scoped_to_authenticating_user(self, client, sync_db, monkeypatch):
-        async def webhook_fake_analyze(content, message_id=None, user_id=None):
+        async def webhook_fake_analyze(content, message_id=None, user_id=None, thread_id=None):
             return {
                 "priority": "important",
                 "confidence": 0.95,
@@ -354,7 +354,7 @@ class TestUserIsolation:
         assert all(m["sender"] == "Ali" for m in listing_a)
 
     def test_webhook_tasks_scoped_to_authenticating_user(self, client, sync_db, monkeypatch):
-        async def webhook_fake_analyze(content, message_id=None, user_id=None):
+        async def webhook_fake_analyze(content, message_id=None, user_id=None, thread_id=None):
             now = datetime.now(timezone.utc)
             if user_id:
                 sync_db.tasks.insert_one(

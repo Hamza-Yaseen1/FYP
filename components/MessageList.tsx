@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, Mail, MessageCircle, Sparkles } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import PriorityBadge from "@/components/PriorityBadge";
 import { useTimeAgo } from "@/lib/use-time-ago";
 import { apiFetch } from "@/lib/api";
@@ -32,16 +32,6 @@ interface Message {
   };
   created_at: string;
 }
-
-const sourceColors: Record<string, string> = {
-  whatsapp: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
-  gmail: "bg-blue-500/15 text-blue-400 border-blue-500/20",
-};
-
-const sourceIcons: Record<string, typeof Mail> = {
-  whatsapp: MessageCircle,
-  gmail: Mail,
-};
 
 const priorityOrder: Record<string, number> = {
   urgent: 0,
@@ -107,7 +97,7 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
 
   if (messages.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed py-12 text-center">
+      <div className="rounded-xl border border-dashed border-border py-12 text-center">
         <p className="text-sm text-muted-foreground">
           No messages yet. Simulate one below.
         </p>
@@ -119,7 +109,7 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
 
   return (
     <>
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         {sortedMessages.map((msg) => (
           <MessageCard key={msg.id} message={msg} onDelete={() => setDeleteId(msg.id)} />
         ))}
@@ -127,27 +117,23 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
 
       {/* Delete Confirmation Dialog */}
       {deleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="rounded-xl bg-card p-6 shadow-lg border max-w-sm w-full mx-4">
-            <h3 className="text-lg font-semibold">Delete Message</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-lg">
+            <h3 className="text-base font-semibold">Delete message</h3>
             <p className="mt-2 text-sm text-muted-foreground">
               Are you sure you want to delete this message? This action cannot be undone.
             </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                variant="outline"
                 onClick={() => setDeleteId(null)}
                 disabled={deleting}
-                className="px-4 py-2 text-sm rounded-lg border hover:bg-secondary transition-colors"
               >
                 Cancel
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="px-4 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50"
-              >
-                {deleting ? "Deleting..." : "Delete"}
-              </button>
+              </Button>
+              <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+                {deleting ? "Deleting…" : "Delete"}
+              </Button>
             </div>
           </div>
         </div>
@@ -165,13 +151,12 @@ function MessageCard({
 }) {
   const timeLabel = useTimeAgo(msg.created_at);
   const analysis = msg.ai_analysis;
-  const SourceIcon = sourceIcons[msg.source.toLowerCase()] ?? Mail;
 
   return (
-    <article className="rounded-xl border bg-card p-4 transition-colors hover:border-white/10">
+    <article className="rounded-xl border border-border bg-card p-4 transition-colors hover:border-muted-foreground/25">
       <div className="flex items-start gap-3">
         {/* Avatar */}
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground">
           {msg.sender.charAt(0).toUpperCase()}
         </div>
 
@@ -179,23 +164,19 @@ function MessageCard({
         <div className="min-w-0 flex-1">
           {/* Sender + badges */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-sm font-semibold">{msg.sender}</span>
-            <Badge
-              variant="outline"
-              className={`gap-1 text-[10px] uppercase ${sourceColors[msg.source] ?? ""}`}
-            >
-              <SourceIcon className="size-3" aria-hidden />
+            <span className="text-sm font-medium text-foreground">{msg.sender}</span>
+            <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
               {msg.source}
-            </Badge>
+            </span>
             {msg.status === "unread" && (
-              <Badge className="text-[10px] bg-blue-500/15 text-blue-400 border-blue-500/20">
-                Unread
-              </Badge>
+              <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-primary uppercase">
+                unread
+              </span>
             )}
             {analysis?.tasks_extracted && analysis.tasks_extracted.length > 0 && (
-              <Badge className="text-[10px] bg-violet-500/15 text-violet-400 border-violet-500/20">
+              <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                 {analysis.tasks_extracted.length} task{analysis.tasks_extracted.length !== 1 ? "s" : ""}
-              </Badge>
+              </span>
             )}
           </div>
 
@@ -212,31 +193,25 @@ function MessageCard({
           )}
 
           {/* Original message */}
-          <p className="mt-2 text-sm leading-relaxed text-foreground/90 line-clamp-2">
+          <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-foreground/90">
             {msg.content}
           </p>
 
           {/* AI analysis */}
           {(analysis?.summary || analysis?.recommended_action) && (
-            <div className="mt-3 space-y-2.5 border-t pt-3">
+            <div className="mt-3 space-y-2.5 border-t border-border pt-3">
               {analysis.summary && (
                 <div>
-                  <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                    <Sparkles className="size-3" aria-hidden />
-                    Summary
-                  </p>
+                  <p className="triage-label text-muted-foreground/70">Summary</p>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     {analysis.summary}
                   </p>
                 </div>
               )}
               {analysis.recommended_action && (
-                <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.07] p-3">
-                  <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-blue-400">
-                    <ArrowRight className="size-3" aria-hidden />
-                    Recommended Action
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-blue-100/90">
+                <div className="rounded-lg bg-muted/60 p-3">
+                  <p className="triage-label text-primary">Recommended action</p>
+                  <p className="mt-1 text-xs leading-relaxed text-foreground/90">
                     {analysis.recommended_action}
                   </p>
                 </div>
@@ -247,19 +222,16 @@ function MessageCard({
 
         {/* Time + Delete */}
         <div className="flex shrink-0 flex-col items-end gap-2">
-          <span className="whitespace-nowrap text-xs text-muted-foreground">
+          <span className="whitespace-nowrap font-mono text-[11px] text-muted-foreground">
             {timeLabel}
           </span>
           <button
             onClick={onDelete}
-            className="text-muted-foreground/50 hover:text-red-500 transition-colors"
+            className="rounded-md p-1 text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive"
             title="Delete message"
+            aria-label="Delete message"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 6h18" />
-              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-            </svg>
+            <Trash2 size={14} />
           </button>
         </div>
       </div>

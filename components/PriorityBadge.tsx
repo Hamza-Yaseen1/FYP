@@ -18,25 +18,30 @@ interface PriorityBadgeProps {
   onPriorityChange?: (newPriority: string) => void;
 }
 
-const priorityConfig: Record<string, { color: string; label: string }> = {
+const priorityConfig: Record<string, { color: string; lamp: string; label: string }> = {
   urgent: {
-    color: "bg-red-500/15 text-red-400 border-red-500/20",
+    color: "border-ember/25 bg-ember/10 text-ember",
+    lamp: "bg-ember",
     label: "Urgent",
   },
   important: {
-    color: "bg-orange-500/15 text-orange-400 border-orange-500/20",
+    color: "border-primary/25 bg-primary/10 text-primary",
+    lamp: "bg-primary",
     label: "Important",
   },
   normal: {
-    color: "bg-blue-500/15 text-blue-400 border-blue-500/20",
+    color: "border-cool/25 bg-cool/10 text-cool",
+    lamp: "bg-cool",
     label: "Normal",
   },
   low: {
-    color: "bg-gray-500/15 text-gray-400 border-gray-500/20",
+    color: "border-border bg-muted text-muted-foreground",
+    lamp: "bg-dim",
     label: "Low",
   },
   pending: {
-    color: "bg-yellow-500/15 text-yellow-400 border-yellow-500/20",
+    color: "border-border bg-muted text-muted-foreground",
+    lamp: "bg-dim",
     label: "Pending",
   },
 };
@@ -44,10 +49,13 @@ const priorityConfig: Record<string, { color: string; label: string }> = {
 const priorities = ["urgent", "important", "normal", "low"];
 
 function getConfidenceColor(confidence: number): string {
-  if (confidence >= 0.8) return "text-green-400";
-  if (confidence >= 0.5) return "text-yellow-400";
-  return "text-red-400";
+  if (confidence >= 0.8) return "text-cool";
+  if (confidence >= 0.5) return "text-primary";
+  return "text-ember";
 }
+
+const badgeBase =
+  "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4 transition-colors hover:opacity-80";
 
 export default function PriorityBadge({
   messageId,
@@ -91,15 +99,16 @@ export default function PriorityBadge({
     .join("\n");
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1.5">
       <DropdownMenu>
         <DropdownMenuTrigger>
           <Badge
             variant="outline"
-            className={`text-[10px] uppercase cursor-pointer hover:opacity-80 ${config.color}`}
+            className={`${badgeBase} ${config.color}`}
             title={tooltipContent || undefined}
           >
-            {isUpdating ? "Updating..." : config.label}
+            <span className={`signal-lamp size-1.5 ${config.lamp}`} aria-hidden />
+            {isUpdating ? "Updating…" : config.label}
           </Badge>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
@@ -116,20 +125,26 @@ export default function PriorityBadge({
       </DropdownMenu>
       {confidence !== undefined && (
         <span
-          className={`text-[10px] ${getConfidenceColor(confidence)}`}
+          className={`font-mono text-[10px] ${getConfidenceColor(confidence)}`}
           title={tooltipContent || undefined}
         >
           {Math.round(confidence * 100)}%
         </span>
       )}
       {showReviewFlag && (
-        <Badge className="text-[10px] bg-yellow-500/15 text-yellow-400 border-yellow-500/20">
-          Needs review
+        <Badge
+          variant="outline"
+          className={`${badgeBase} pointer-events-none border-ember/25 bg-ember/10 text-ember`}
+        >
+          Review
         </Badge>
       )}
       {showReviewRecommended && (
-        <Badge className="text-[10px] bg-yellow-500/15 text-yellow-400 border-yellow-500/20">
-          Review
+        <Badge
+          variant="outline"
+          className={`${badgeBase} pointer-events-none border-primary/25 bg-primary/10 text-primary`}
+        >
+          Verify
         </Badge>
       )}
     </div>

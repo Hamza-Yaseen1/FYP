@@ -1,30 +1,27 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.11.0 → 1.12.0 (MINOR: new Day 24 AI Orchestrator section
-added covering orchestration purpose, core principles, what the Orchestrator
-decides, what it must NOT do, and the quality bar; Complete AI Pipeline rules
-amended so agent selection is now made by the Orchestrator, not a fixed
-all-five-agents default)
-Modified principles:
-  - Complete AI Pipeline core principle #1 "One message in, one complete
-    analysis out" → agent selection now delegated to the Day 24 Orchestrator
-  - Complete AI Pipeline core principle #2 "Fixed stage order" → order applies
-    among the agents selected by the Orchestrator
-  - Complete Pipeline Targets → "all five agents" line now reads
-    "Orchestrator → selected agents"
+Version change: 1.12.0 → 1.13.0 (MINOR: new Day 25 Agent Memory / Context
+section added covering purpose, core principles for linking messages, the
+stored conversation/thread/message identity contract, what the system MUST
+NOT do with context, and the quality bar; compliance checklist expanded
+with 7 context-handling checks)
+Modified principles: N/A (Day 25 extends existing principles — I, III, IV,
+V, VII — and the Day 24 Orchestrator rules without redefining them; the
+Single LLM call pipeline rule already covers context passing)
 Added sections:
-  - Day 24 AI Orchestrator (purpose, core orchestration principles, what the
-    Orchestrator MUST decide, what it MUST NOT do, quality bar)
+  - Day 25 Agent Memory / Context (purpose of context, core linking
+    principles, stored fields contract for messageId/threadId/conversationId,
+    what the system MUST NOT do, quality bar)
+  - 7 new Compliance Checklist items (Day 25 context handling)
 Removed sections: N/A
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ no changes needed
     (Constitution Check gates derive from constitution file)
   - .specify/templates/spec-template.md ✅ no changes needed
-    (requirements format neutral to orchestration rules)
+    (requirements format neutral to context rules)
   - .specify/templates/tasks-template.md ✅ no changes needed
-    (task structure compatible; routing/agent-selection tasks follow standard
-    patterns)
+    (task structure compatible; context tasks follow standard patterns)
   - .specify/templates/commands/*.md ✅ N/A — no command templates exist
 Follow-up TODOs: None
 -->
@@ -1453,6 +1450,156 @@ get full treatment; nothing irrelevant is ever computed.
   selected agents → MongoDB → dashboard) still produces correct cards, and
   simulate messages behave identically.
 
+### Day 25 Agent Memory / Context
+
+This section defines the rules for giving the AI lightweight context between
+related messages. It extends Principle I (Simplicity First), Principle III
+(AI is Assistive, Not Magical), Principle IV (User Control), Principle V
+(Security and Privacy), Principle VII (Progressive Enhancement), and the
+Day 24 Orchestrator rules. Today every message is analyzed in isolation;
+Day 25 lets the system associate messages when it clearly makes sense.
+
+#### Purpose of Agent Memory / Context
+
+The AI MUST be able to treat closely-related messages as one exchange so
+that context from one message can inform the analysis of another:
+
+```text
+Message 1: "Can you send the report?"        ← task, no deadline
+Message 2: "Need it before our meeting."     ← deadline context
+
+Known together: the report task carries a deadline; the inbox shows one
+linked thread instead of two unrelated cards.
+```
+
+**Success means**: When two or more messages clearly belong to the same
+exchange, the system links them (stored IDs) and, when a later message
+supplies missing context (deadline, urgency), that context is reflected in
+the earlier message's analysis — visibly and explainably. Messages that do
+not clearly relate are treated exactly as they are today.
+
+#### Core Principles for Linking Messages
+
+1. **Link only when it clearly makes sense.** Two messages MUST be linked
+   only by a deterministic rule: same user, same channel (`source`), same
+   normalized `sender`, and arrival within a bounded time window of the
+   previous message in the thread (default ≤ 60 minutes). The link MUST be
+   evidence-based, never a matter of interpretation.
+2. **Context is additive, never invented.** A later message's context MAY
+   refine the analysis of an earlier linked message, but every inferred
+   enrichment MUST be recorded with an explanation naming the linked
+   message(s). Nothing is written into a message that the linked messages do
+   not actually support.
+3. **Idle by default.** When no link applies, analysis proceeds exactly as
+   today — zero behavior change, zero extra cost. Context is a bonus, never
+   a prerequisite for analysis.
+4. **Assistive, not magical.** Every context-enriched field MUST carry a
+   plain-language reason (e.g., "Deadline added from a later message by Ali").
+   The insight MUST be dismissible and verifiable against the linked
+   messages — never a silent rewrite of prior analysis.
+5. **Isolation is absolute.** A thread or conversation MUST NEVER span
+   users. Linking happens strictly within one user's messages and remains
+   owned by that user (Day 18 User Isolation Rules apply unchanged).
+6. **No memory framework.** This is lightweight in-message context, NOT a
+   persistent conversation memory. No vector store, no embeddings, no RAG,
+   no agent-with-memory runtime. One deterministic link step, then the
+   existing single-call pipeline (Principle I).
+
+#### What MUST Be Stored
+
+Every message document in MongoDB MUST carry three identity fields, all set
+server-side at ingest — never supplied by the client:
+
+| Field | Type | Set By | Nullable | Meaning |
+|---|---|---|---|---|
+| `messageId` | string | System (message `_id`) | Never | Identity of the message |
+| `threadId` | string | Server (deterministic link rule) | Yes (null when alone) | Groups messages in one exchange |
+| `conversationId` | string | Server (defaults to `threadId` when set) | Yes | Broad persistent grouping, reserved for user-defined conversations |
+
+Rules:
+
+1. **`messageId`** equals the message's own identifier and MUST always be
+   present.
+2. **`threadId`** follows the deterministic rule in Core Principle #1. When
+   a new message matches an existing thread (same user, source, sender,
+   in-window arrival), it inherits that thread's `threadId`; otherwise it is
+   `null`. A `threadId` MUST NOT be created for a single message on
+   speculation.
+3. **`conversationId`** MUST NOT be invented. For Day 25 it equals
+   `threadId` when set and is `null` otherwise. A user-defined conversation
+   concept may come later only by explicit amendment of this section.
+4. **Isolation preserved.** Linked messages remain individually owned,
+   individually queryable, and individually deletable by their user. The
+   link is metadata, never a shared container.
+5. **Indexing.** Per-user indexes on `{user_id, conversationId, receivedAt}`
+   and `{user_id, threadId, receivedAt}` MUST support link resolution and
+   thread display without full scans.
+6. **No retrofitting.** Historical messages MAY be backfilled with
+   `threadId`/`conversationId` only by the same deterministic rule and only
+   within one user's data; backfills MUST NOT guess groupings.
+
+#### What Context Enters the AI Call (Bounded)
+
+1. **Deterministic link, then single call.** Linking is resolved by the
+   rule in storage; the context is presented to the model INSIDE the
+   existing single analysis call (Complete AI Pipeline) — never as an extra
+   round-trip or a second agent.
+2. **Cap the context window.** At most the most recent 5 messages of the
+   linked thread are passed in, all belonging to the same user. Older or
+   unrelated history MUST NOT be included.
+3. **Prioritized user facts.** An explicit fact stated by the user (a stated
+   deadline, a stated preference) always wins over inferred context. The
+   system MUST NOT use context to override a user-stated value (mirror of the
+   Day 11 deadline rules).
+4. **The Orchestrator still decides.** Context availability is one more input
+   to the Orchestrator's routing decision. If routing decides context is not
+   worth spending on, the message is analyzed standalone with normal
+   fallbacks — never blocked.
+
+#### What the System MUST NOT Do
+
+- **NEVER invent a link.** Messages from different senders, different
+  channels, or far apart in time MUST NOT be grouped on keywords, tone, or
+  speculation. A false link is a false claim about the conversation.
+- **NEVER build a memory framework.** No vector store, no embeddings, no
+  RAG, no fine-tuned memory model, no conversation-history database beyond
+  the stored identity fields. Context must fit in a deterministic link plus
+  the existing single LLM call.
+- **NEVER span users.** A thread or conversation MUST NOT combine messages
+  from different users. Cross-user grouping is a Day 18 isolation breach.
+- **NEVER silently rewrite prior analysis.** If later context changes an
+  earlier message's deadline or urgency, the update MUST be stored as a new,
+  explainable analysis revision with a reason naming the linked message. The
+  original wording is never overwritten invisibly.
+- **NEVER let context override an explicit user-stated fact.** An inferred
+  deadline never beats a stated one.
+- **NEVER block ingestion on linking.** If link resolution fails or times
+  out, the message is stored and analyzed standalone exactly as today
+  (Progressive Enhancement; Day 24 Orchestrator fallback rules).
+- **NEVER inflate cost.** Context handling adds zero LLM round-trips and zero
+  measurable latency to standalone messages.
+
+#### Quality Bar for Day 25
+
+- **Link precision**: ≤ 5% false links — messages from different senders,
+  different channels, or unrelated conversations are never grouped (tested
+  against a labeled set of 30 message pairs).
+- **Link recall**: ≥ 80% of labeled, clearly-related same-sender windows
+  arrive correctly in one `threadId` (same labeled set).
+- **Context effect**: When a later message adds a deadline to an earlier
+  linked message, the earlier message's deadline/priority update is visible,
+  correct, and carries a reason naming the linked message. 0 tolerance for
+  unlabelled context influence.
+- **No regression**: Standalone (unlinked) messages are analyzed exactly as
+  before with zero added latency — verified by re-running the existing
+  single-message test set unchanged.
+- **Isolation**: Linking a conversation across two users is impossible —
+  verified with the two-user isolation test.
+- **Cost discipline**: Context handling adds zero extra LLM round-trips;
+  total pipeline latency stays within the existing ≤ 10 second budget.
+- **Explainability**: Every context-enriched field is dismissible and
+  traceable to the linked message(s) that produced it.
+
 ### Auth Pages UI/UX Principles
 
 Both `/login` and `/signup` share one visual system built on Tailwind CSS +
@@ -1704,5 +1851,12 @@ Before merging any feature branch, verify:
 - [ ] Orchestration adds zero extra LLM round-trips; total pipeline latency stays within the ≤ 10 second budget
 - [ ] Skipped agents store documented fallback values and an explainable `routing` note; no fabricated outputs
 - [ ] The Orchestration layer is a single function/path — no multi-agent framework, no scattered AI calls
+- [ ] Every message stores `messageId`, `threadId`, and `conversationId` (nullable where not applicable), all set server-side — never client-supplied
+- [ ] Messages are linked only by the deterministic rule (same user + source + sender + bounded time window); zero LLM-invented links
+- [ ] Context enters analysis inside the existing single LLM call — no extra round-trips, no second agent
+- [ ] Context-enriched fields carry an explanation naming the linked message(s) and are dismissible by the user
+- [ ] Threads/conversations never span users; linked messages stay individually owned, queryable, and deletable (isolation)
+- [ ] No vector store, embeddings, RAG, or long-term memory layer is used for context (Simplicity First)
+- [ ] Link-resolution failure degrades gracefully — the message is analyzed standalone and ingestion never blocks
 
-**Version**: 1.12.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-29
+**Version**: 1.13.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-29

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Connection, createConnection, deleteConnection } from "@/lib/api/connections";
 
 interface ConnectionCardProps {
@@ -8,10 +9,10 @@ interface ConnectionCardProps {
   onConnect?: () => void;
 }
 
-const providerIcons: Record<string, string> = {
-  whatsapp: "💬",
-  gmail: "📧",
-  linkedin: "💼",
+const providerDots: Record<string, string> = {
+  whatsapp: "bg-emerald-500",
+  gmail: "bg-cool",
+  linkedin: "bg-dim",
 };
 
 const providerNames: Record<string, string> = {
@@ -60,59 +61,73 @@ export default function ConnectionCard({ connection, onConnect }: ConnectionCard
   };
 
   return (
-    <div className="flex items-center justify-between p-4 border rounded-lg">
-      <div className="flex items-center gap-3">
-        <span className="text-2xl">{providerIcons[connection.provider]}</span>
+    <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-3.5">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-muted">
+          <span
+            className={`signal-lamp size-2 ${providerDots[connection.provider] ?? "bg-dim"}`}
+            aria-hidden
+          />
+        </span>
         <div>
-          <h3 className="font-medium">{providerNames[connection.provider]}</h3>
-          <p className="text-sm text-gray-500">
-            {isComingSoon ? "Coming Soon" : connection.status}
+          <h3 className="text-sm font-semibold">{providerNames[connection.provider]}</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {isComingSoon ? (
+              "Coming soon"
+            ) : isConnected ? (
+              <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <span className="signal-lamp size-1.5 bg-emerald-500" aria-hidden />
+                Connected
+              </span>
+            ) : (
+              "Not connected"
+            )}
           </p>
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && <p className="mt-1 text-sm text-ember">{error}</p>}
         </div>
       </div>
       <div>
         {isComingSoon ? (
-          <span className="px-4 py-2 text-sm text-gray-400 bg-gray-100 rounded">
-            Coming Soon
+          <span className="inline-flex rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground">
+            Soon
           </span>
         ) : isConnected ? (
           <>
             {showConfirm ? (
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Disconnect?</span>
-                <button
+                <span className="text-sm text-muted-foreground">Disconnect?</span>
+                <Button
+                  variant="destructive"
+                  size="sm"
                   onClick={handleDisconnect}
                   disabled={isLoading}
-                  className="px-3 py-1 text-sm text-white bg-red-500 rounded hover:bg-red-600 disabled:opacity-50"
                 >
-                  {isLoading ? "..." : "Yes"}
-                </button>
-                <button
+                  {isLoading ? "…" : "Yes"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setShowConfirm(false)}
                   disabled={isLoading}
-                  className="px-3 py-1 text-sm text-gray-600 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-50"
                 >
                   No
-                </button>
+                </Button>
               </div>
             ) : (
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowConfirm(true)}
-                className="px-4 py-2 text-sm text-red-600 bg-red-50 rounded hover:bg-red-100"
+                className="text-destructive hover:text-destructive"
               >
                 Disconnect
-              </button>
+              </Button>
             )}
           </>
         ) : (
-          <button
-            onClick={handleConnect}
-            disabled={isLoading}
-            className="px-4 py-2 text-sm text-white bg-blue-500 rounded hover:bg-blue-600 disabled:opacity-50"
-          >
-            {isLoading ? "Connecting..." : "Connect"}
-          </button>
+          <Button onClick={handleConnect} disabled={isLoading}>
+            {isLoading ? "Connecting…" : "Connect"}
+          </Button>
         )}
       </div>
     </div>

@@ -42,6 +42,7 @@ async def analyze_message(
     user_id: str = None,
     run_tasks: bool = True,
     routing: RoutingDecision | None = None,
+    context_messages: list[dict] | None = None,
 ) -> dict:
     provider = get_provider()
 
@@ -49,8 +50,14 @@ async def analyze_message(
         logger.info("Starting AI analysis for message (%d chars)", len(message_content))
 
         # Single LLM call: priority + tasks + deadlines + summary +
-        # recommended action come back together.
-        result = await provider.analyze(message_content)
+        # recommended action come back together. Context (≤5 earlier messages
+        # in this thread) rides inside that SAME call — never a second round-trip.
+        if context_messages is None:
+            result = await provider.analyze(message_content)
+        else:
+            result = await provider.analyze(
+                message_content, context=context_messages, current_message_id=message_id
+            )
 
         recommendation = result.recommended_actions[0] if result.recommended_actions else ""
 
@@ -63,6 +70,7 @@ async def analyze_message(
             "recommended_actions": list(result.recommended_actions),
             "tasks_extracted": result.tasks_extracted,
             "deadlines": result.deadlines,
+            "context_updates": list(getattr(result, "context_updates", [])),
             "provider": "groq",
             "analyzed_at": datetime.now(timezone.utc),
             "status": "completed",
@@ -131,6 +139,7 @@ async def analyze_message(
             "recommended_actions": [],
             "tasks_extracted": [],
             "deadlines": [],
+            "context_updates": [],
             "provider": "groq",
             "analyzed_at": None,
             "status": "pending",

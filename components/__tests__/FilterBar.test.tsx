@@ -4,6 +4,8 @@ import { render, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import FilterBar from "../FilterBar";
 
+const asHTMLElement = (el: Element | null): HTMLElement => el as HTMLElement;
+
 const mockProps = {
   sources: [{ value: "whatsapp", label: "WhatsApp" }, { value: "gmail", label: "Gmail" }],
   priorities: [{ value: "urgent", label: "Urgent" }, { value: "normal", label: "Normal" }],
@@ -23,7 +25,7 @@ const mockProps = {
 describe("FilterBar", () => {
   it("renders filter buttons", () => {
     const { container } = render(<FilterBar {...mockProps} />);
-    const root = container.firstElementChild!;
+    const root = asHTMLElement(container.firstElementChild);
     expect(within(root).getByText("Source")).toBeDefined();
     expect(within(root).getByText("Priority")).toBeDefined();
     expect(within(root).getByText("Sender")).toBeDefined();
@@ -34,7 +36,7 @@ describe("FilterBar", () => {
     const user = userEvent.setup();
     const onSourceChange = vi.fn();
     const { container } = render(<FilterBar {...mockProps} onSourceChange={onSourceChange} />);
-    const root = container.firstElementChild!;
+    const root = asHTMLElement(container.firstElementChild);
 
     await user.click(within(root).getByRole("button", { name: /source/i }));
     await user.click(within(root).getByRole("button", { name: "WhatsApp" }));
@@ -45,7 +47,7 @@ describe("FilterBar", () => {
     const user = userEvent.setup();
     const onPriorityChange = vi.fn();
     const { container } = render(<FilterBar {...mockProps} onPriorityChange={onPriorityChange} />);
-    const root = container.firstElementChild!;
+    const root = asHTMLElement(container.firstElementChild);
 
     await user.click(within(root).getByRole("button", { name: /priority/i }));
     await user.click(within(root).getByRole("button", { name: "Urgent" }));
@@ -54,7 +56,7 @@ describe("FilterBar", () => {
 
   it("shows clear filters button when filters are active", () => {
     const { container } = render(<FilterBar {...mockProps} selectedSource="whatsapp" />);
-    const root = container.firstElementChild!;
+    const root = asHTMLElement(container.firstElementChild);
     expect(within(root).getByText("Clear filters")).toBeDefined();
   });
 
@@ -77,7 +79,7 @@ describe("FilterBar", () => {
         onEndDateChange={onEndDateChange}
       />
     );
-    const root = container.firstElementChild!;
+    const root = asHTMLElement(container.firstElementChild);
 
     await user.click(within(root).getByRole("button", { name: /clear filters/i }));
     expect(onSourceChange).toHaveBeenCalledWith(null);
