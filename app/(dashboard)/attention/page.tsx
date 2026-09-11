@@ -7,12 +7,12 @@ export const metadata: Metadata = {
 
 export default function AttentionPage() {
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold tracking-tight">Attention</h1>
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+      <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Attention</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Items that need your immediate attention.
+        Items that need you right now
       </p>
-      <div className="mt-8">
+      <div className="mt-6">
         <NeedsAttentionSection
           refreshKey={0}
           title=""

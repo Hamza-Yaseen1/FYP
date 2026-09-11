@@ -6,6 +6,7 @@ import FilterBar from "@/components/FilterBar";
 import SearchBar from "@/components/SearchBar";
 import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
+import PriorityBadge from "@/components/PriorityBadge";
 import { apiFetch } from "@/lib/api";
 
 interface Message {
@@ -15,10 +16,12 @@ interface Message {
   source: string;
   status: string;
   state: string;
+  subject?: string;
   ai_analysis?: {
     priority: string;
     confidence: number;
     summary?: string;
+    explanation?: string;
     recommended_action?: string;
     needs_attention?: boolean;
     attention_reason?: string;
@@ -176,12 +179,12 @@ export default function InboxPage() {
   }));
 
   return (
-    <div className="p-6">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Inbox</h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Inbox</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {total} message{total !== 1 ? "s" : ""} total
+            {total} message{total !== 1 ? "s" : ""} in
           </p>
         </div>
       </div>
@@ -225,7 +228,7 @@ export default function InboxPage() {
         {loading ? (
           <LoadingSkeleton count={3} />
         ) : error ? (
-          <div className="rounded-xl border border-destructive/50 bg-destructive/10 p-6 text-center">
+          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-6 text-center">
             <p className="text-sm text-destructive">{error}</p>
             <button
               onClick={() => setRefreshKey((k) => k + 1)}
@@ -242,7 +245,7 @@ export default function InboxPage() {
             onClearFilters={handleClearAllFilters}
           />
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {messages.map((msg) => (
               <MessageCard key={msg.id} message={msg} />
             ))}
@@ -259,62 +262,59 @@ function MessageCard({ message: msg }: { message: Message }) {
   const confidence = analysis?.confidence ? Math.round(analysis.confidence * 100) : null;
 
   return (
-    <article className="rounded-xl border bg-card p-4 transition-colors hover:border-white/10">
+    <article className="rounded-xl border border-border bg-card p-4 transition-colors hover:border-muted-foreground/25">
       <div className="flex items-start gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground">
           {msg.sender.charAt(0).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-sm font-semibold">{msg.sender}</span>
-            <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase text-secondary-foreground">
+            <span className="text-sm font-medium text-foreground">{msg.sender}</span>
+            <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
               {msg.source}
             </span>
             {msg.status === "unread" && (
-              <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-medium text-blue-400">
-                Unread
-              </span>
-            )}
-            {analysis && (
-              <span
-                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                  analysis.priority === "urgent"
-                    ? "bg-red-500/15 text-red-400"
-                    : analysis.priority === "important"
-                    ? "bg-yellow-500/15 text-yellow-400"
-                    : analysis.priority === "normal"
-                    ? "bg-green-500/15 text-green-400"
-                    : "bg-gray-500/15 text-gray-400"
-                }`}
-              >
-                {analysis.priority}
+              <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-primary uppercase">
+                unread
               </span>
             )}
             {confidence !== null && (
-              <span className="text-[10px] text-muted-foreground">
-                {confidence}%
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {confidence}% confidence
               </span>
             )}
           </div>
-          <p className="mt-2 text-sm leading-relaxed text-foreground/90">
+          {analysis && (
+            <div className="mt-1.5">
+              <PriorityBadge
+                messageId={msg.id}
+                priority={analysis.priority}
+                confidence={analysis.confidence}
+                explanation={analysis.explanation}
+              />
+            </div>
+          )}
+          <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-foreground/90">
             {msg.content}
           </p>
           {analysis?.summary && (
-            <div className="mt-2 rounded-lg bg-secondary/50 p-2">
-              <p className="text-xs text-muted-foreground">
-                <span className="font-semibold">Summary:</span> {analysis.summary}
+            <div className="mt-2 rounded-lg bg-muted/60 p-2.5">
+              <p className="triage-label text-muted-foreground/70">Summary</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {analysis.summary}
               </p>
             </div>
           )}
           {analysis?.recommended_action && (
-            <div className="mt-2 rounded-lg bg-blue-500/10 p-2">
-              <p className="text-xs text-blue-400">
-                <span className="font-semibold">Recommended Action:</span> {analysis.recommended_action}
+            <div className="mt-2 rounded-lg bg-muted/60 p-2.5">
+              <p className="triage-label text-primary">Move on</p>
+              <p className="mt-1 text-xs leading-relaxed text-foreground/90">
+                {analysis.recommended_action}
               </p>
             </div>
           )}
         </div>
-        <div className="shrink-0 text-xs text-muted-foreground">{timeAgo}</div>
+        <div className="shrink-0 font-mono text-[11px] text-muted-foreground">{timeAgo}</div>
       </div>
     </article>
   );

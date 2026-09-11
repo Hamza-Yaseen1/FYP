@@ -4,12 +4,18 @@ import json
 import logging
 from groq import AsyncGroq
 from .base import BaseLLMProvider, AIAnalysisResult
+from ..context import build_context_block
 
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
 
 MODEL_NAME = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+
+# Cap output tokens well under the free-tier OTPM limit (1000/min ~= 900+
+# output tokens) so a single analysis never trips Groq's 429 "request too
+# large" guard. With reasoning disabled the JSON answer is ~150-400 tokens.
+MAX_OUTPUT_TOKENS = int(os.getenv("GROQ_MAX_OUTPUT_TOKENS", "700"))
 
 # Single-call analysis prompt: priority + tasks + deadlines + summary +
 # recommended action in ONE response. One message must never cost more
@@ -148,15 +154,32 @@ class GroqProvider(BaseLLMProvider):
             model=self.model,
             messages=[{"role": "user", "content": prompt + "\n/no_think"}],
             temperature=0.3,
-            max_tokens=4096,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            # Qwen 3.6 27B reasons by default and burns its whole output
+            # budget (and the Groq OTPM cap) on a "thinking" block that we
+            # never surface. Disable reasoning and ask for strict JSON so
+            # each analysis stays within one small, parseable response.
+            reasoning_effort="none",
+            response_format={"type": "json_object"},
         )
         raw_content = response.choices[0].message.content
         cleaned = clean_response(raw_content)
         return json.loads(cleaned)
 
-    async def analyze(self, message: str) -> AIAnalysisResult:
+    async def analyze(
+        self,
+        message: str,
+        context: list[dict] | None = None,
+        current_message_id: str | None = None,
+    ) -> AIAnalysisResult:
         # NOTE: .replace, NOT .format — messages may contain braces.
-        prompt = ANALYSIS_PROMPT.replace("{message}", message)
+        prompt = ANALYSIS_PROMPT
+        block = build_context_block(context, current_message_id) if context else None
+        if block:
+            prompt = prompt.replace(
+                "MESSAGE TO ANALYZE:", block + "\n\nMESSAGE TO ANALYZE:"
+            )
+        prompt = prompt.replace("{message}", message)
 
         result = await self._complete(prompt)
 
@@ -195,6 +218,7 @@ class GroqProvider(BaseLLMProvider):
             recommended_actions=[action] if action else [],
             tasks_extracted=tasks,
             deadlines=result.get("deadlines", []) or [],
+            context_updates=result.get("context_updates", []) or [],
         )
 
     def _load_prompt(self, filename: str) -> str:

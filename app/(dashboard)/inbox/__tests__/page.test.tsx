@@ -43,7 +43,7 @@ const mockCounts = {
 describe("InboxPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (apiFetch as any).mockImplementation((url: string) => {
+    vi.mocked(apiFetch).mockImplementation((url: string) => {
       if (url.includes("/messages/counts")) {
         return Promise.resolve(mockCounts);
       }
@@ -85,7 +85,7 @@ describe("InboxPage", () => {
   });
 
   it("shows error state on API failure", async () => {
-    (apiFetch as any).mockRejectedValue(new Error("API Error"));
+    vi.mocked(apiFetch).mockRejectedValue(new Error("API Error"));
 
     render(<InboxPage />);
 

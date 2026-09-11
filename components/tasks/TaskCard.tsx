@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/time-ago";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,10 +24,25 @@ interface Task {
   snoozed_until: string | null;
 }
 
-const priorityConfig: Record<string, { emoji: string; color: string; label: string }> = {
-  urgent: { emoji: "🔴", color: "text-red-500", label: "Urgent priority" },
-  important: { emoji: "🟡", color: "text-yellow-500", label: "Important priority" },
-  normal: { emoji: "🟢", color: "text-green-500", label: "Normal priority" },
+const priorityConfig: Record<
+  string,
+  { badge: string; dot: string; label: string }
+> = {
+  urgent: {
+    badge: "border-ember/25 bg-ember/10 text-ember",
+    dot: "bg-ember",
+    label: "Urgent priority",
+  },
+  important: {
+    badge: "border-primary/25 bg-primary/10 text-primary",
+    dot: "bg-primary",
+    label: "Important priority",
+  },
+  normal: {
+    badge: "border-cool/25 bg-cool/10 text-cool",
+    dot: "bg-cool",
+    label: "Normal priority",
+  },
 };
 
 interface TaskCardProps {
@@ -49,23 +64,23 @@ export default function TaskCard({
   const priority = task.priority_indicator || "normal";
   const config = priorityConfig[priority] || priorityConfig.normal;
 
-  const handleComplete = async () => {
+  const handleComplete = useCallback(async () => {
     setIsCompleting(true);
     try {
       await onComplete(task.id);
     } finally {
       setIsCompleting(false);
     }
-  };
+  }, [onComplete, task.id]);
 
-  const handleSnooze = async (duration: string) => {
+  const handleSnooze = useCallback(async (duration: string) => {
     setIsSnoozing(true);
     try {
       await onSnooze(task.id, duration);
     } finally {
       setIsSnoozing(false);
     }
-  };
+  }, [onSnooze, task.id]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -85,52 +100,57 @@ export default function TaskCard({
 
   return (
     <div
-      className="flex items-start gap-4 rounded-xl border bg-card p-4 transition-colors hover:border-white/10 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      className="flex items-start gap-4 rounded-xl border border-border bg-card p-4 transition-colors hover:border-muted-foreground/25 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-background"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       role="article"
       aria-label={`Task: ${task.description}`}
     >
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className={config.color} aria-label={config.label}>
-            {config.emoji}
-          </span>
+        <div className="flex items-center gap-2.5">
+          <span className={`signal-lamp size-2 shrink-0 ${config.dot}`} aria-hidden />
           <p className="text-sm font-medium">{task.description}</p>
         </div>
-        {task.deadline && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            Due: {task.deadline}
-          </p>
-        )}
-        <div className="mt-2 flex flex-wrap gap-2">
-          <span className="text-[10px] text-muted-foreground">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${config.badge}`}
+          >
+            {config.label}
+          </span>
+          {task.deadline && (
+            <span className="font-mono text-[11px] text-muted-foreground">
+              by {task.deadline}
+            </span>
+          )}
+          <span className="font-mono text-[11px] text-muted-foreground">
             {timeAgo(task.created_at)}
           </span>
         </div>
       </div>
-      <div className="flex shrink-0 gap-1">
+      <div className="flex shrink-0 items-center gap-1.5">
         {task.status !== "completed" && (
           <>
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={handleComplete}
               disabled={isCompleting}
-              className="rounded-lg border px-2 py-1 text-[10px] hover:bg-secondary transition-colors disabled:opacity-50"
               aria-label={isCompleting ? "Completing task..." : "Complete task"}
             >
-              {isCompleting ? "Completing..." : "Complete"}
-            </button>
+              {isCompleting ? "Completing…" : "Complete"}
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     disabled={isSnoozing}
-                    className="rounded-lg border px-2 py-1 text-[10px] hover:bg-secondary transition-colors disabled:opacity-50"
                     aria-label={isSnoozing ? "Snoozing task..." : "Snooze task"}
                   />
                 }
               >
-                {isSnoozing ? "Snoozing..." : "Snooze"}
+                {isSnoozing ? "Snoozing…" : "Snooze"}
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => handleSnooze("1hour")}>
@@ -144,19 +164,21 @@ export default function TaskCard({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => onViewMessage(task.id)}
-              className="rounded-lg border px-2 py-1 text-[10px] hover:bg-secondary transition-colors"
               aria-label="View source message"
             >
               View
-            </button>
+            </Button>
           </>
         )}
         {task.status === "completed" && (
-          <Badge className="text-[10px] bg-emerald-500/15 text-emerald-400 border-emerald-500/20">
-            Done
-          </Badge>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <span className="signal-lamp size-1.5 bg-dim" aria-hidden />
+            done
+          </span>
         )}
       </div>
     </div>

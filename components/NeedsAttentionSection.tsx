@@ -58,8 +58,8 @@ export default function NeedsAttentionSection({
     if (!emptyMessage) return null;
     return (
       <div>
-        {title && <h2 className="mb-4 text-lg font-semibold">{title}</h2>}
-        <div className="rounded-xl border border-dashed py-12 text-center">
+        {title && <h2 className="triage-label mb-3 text-muted-foreground">{title}</h2>}
+        <div className="rounded-xl border border-dashed border-border py-12 text-center">
           <p className="text-sm text-muted-foreground">{emptyMessage}</p>
         </div>
       </div>
@@ -69,14 +69,14 @@ export default function NeedsAttentionSection({
   return (
     <div>
       {title && (
-        <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
-          {title}
-          <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-400">
+        <div className="mb-3 flex items-center gap-2">
+          <h2 className="triage-label text-muted-foreground">{title}</h2>
+          <span className="rounded-full border border-ember/25 bg-ember/10 px-2 py-0.5 font-mono text-[11px] font-medium text-ember">
             {flagged.length}
           </span>
-        </h2>
+        </div>
       )}
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         {flagged.map((message) => (
           <NeedsAttentionCard key={message.id} message={message} />
         ))}

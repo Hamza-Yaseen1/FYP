@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Bell, LogOut, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import ThemeToggle from "@/components/ThemeToggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,7 +56,7 @@ export default function Navbar() {
   const initial = me?.name?.trim()?.charAt(0)?.toUpperCase() || "?";
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-4 border-b bg-background/80 px-4 backdrop-blur-md sm:px-6">
+    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-2 border-b border-border bg-background/95 px-4 backdrop-blur-sm sm:px-6">
       {/* Mobile menu */}
       <Sheet>
         <SheetTrigger
@@ -64,7 +65,7 @@ export default function Navbar() {
           <Menu size={20} />
           <span className="sr-only">Toggle sidebar</span>
         </SheetTrigger>
-        <SheetContent side="left" className="w-64 p-0">
+        <SheetContent side="left" className="w-72 border-r bg-sidebar p-0">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <Sidebar />
         </SheetContent>
@@ -74,19 +75,26 @@ export default function Navbar() {
       <div className="flex-1" />
 
       {/* Right side */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
+        {/* Theme toggle */}
+        <ThemeToggle />
+
         {/* Notification bell */}
-        <Button variant="ghost" size="icon" className="relative">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative text-muted-foreground"
+          aria-label="Notifications"
+        >
           <Bell size={18} />
-          <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-red-500" />
-          <span className="sr-only">Notifications</span>
+          <span className="signal-lamp absolute right-2 top-2 size-1.5 bg-ember" />
         </Button>
 
         {/* User dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <button className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent/50" />
+              <button className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent/60" />
             }
           >
             <Avatar size="sm">
@@ -96,13 +104,15 @@ export default function Navbar() {
               {me?.name ?? "..."}
             </span>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem disabled>{me?.email}</DropdownMenuItem>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem disabled className="text-muted-foreground">
+              {me?.email}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={handleLogout}
               disabled={loggingOut}
-              className="text-red-400 focus:text-red-400"
+              variant="destructive"
             >
               <LogOut size={14} className="mr-2" />
               {loggingOut ? "Signing out..." : "Log out"}

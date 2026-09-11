@@ -79,15 +79,17 @@ export default function LoginPage() {
   return (
     <Card>
       <CardHeader className="text-center">
-        <CardTitle className="text-xl">Welcome back</CardTitle>
-        <CardDescription>Sign in to your account</CardDescription>
+        <CardTitle className="text-xl font-semibold tracking-tight">
+          Welcome back
+        </CardTitle>
+        <CardDescription>Sign in to your desk</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           {serverError && (
             <div
               role="alert"
-              className="rounded-md border border-red-500/25 bg-red-500/10 px-3 py-2 text-sm text-red-400"
+              className="rounded-lg border border-ember/25 bg-ember-dim/40 px-3 py-2 text-sm text-ember"
             >
               {serverError}
             </div>
@@ -103,7 +105,7 @@ export default function LoginPage() {
               aria-invalid={Boolean(fieldErrors.email)}
             />
             {fieldErrors.email && (
-              <p className="text-xs text-red-400">{fieldErrors.email}</p>
+              <p className="text-xs text-ember">{fieldErrors.email}</p>
             )}
           </div>
           <div className="space-y-2">
@@ -117,7 +119,7 @@ export default function LoginPage() {
               aria-invalid={Boolean(fieldErrors.password)}
             />
             {fieldErrors.password && (
-              <p className="text-xs text-red-400">{fieldErrors.password}</p>
+              <p className="text-xs text-ember">{fieldErrors.password}</p>
             )}
           </div>
           <Button type="submit" className="w-full" disabled={submitting}>
@@ -130,7 +132,7 @@ export default function LoginPage() {
           Don&apos;t have an account?{" "}
           <Link
             href="/signup"
-            className="text-primary underline-offset-4 hover:underline"
+            className="font-medium text-primary underline-offset-4 hover:underline"
           >
             Sign up
           </Link>

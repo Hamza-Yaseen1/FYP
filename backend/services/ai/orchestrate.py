@@ -15,6 +15,11 @@ import logging
 from datetime import datetime, timezone
 
 from .analyzer import analyze_message
+from .context import (
+    apply_context_updates,
+    fetch_thread_context,
+    validate_context_updates,
+)
 from .routing import RoutingDecision, decide_routing
 
 logger = logging.getLogger(__name__)
@@ -94,13 +99,22 @@ def _deterministic_defaults(
 
 
 async def process_message(
-    content: str, message_id: str = None, user_id: str = None, message_type: str = "text"
+    content: str,
+    message_id: str = None,
+    user_id: str = None,
+    message_type: str = "text",
+    thread_id: str = None,
 ) -> dict:
     """Route one message through the Orchestrator and return the combined result.
 
     Never raises: ``analyze_message`` degrades to a pending fallback, and
     trivial / no-content messages short-circuit into deterministic defaults.
     A routing record is attached on every path.
+
+    When ``thread_id`` (+ ``user_id``) is known, up to 5 earlier messages of
+    that thread are fetched and injected into the SAME single AI call; any
+    validated ``context_updates`` are applied to earlier messages and removed
+    from the returned record (they are stored, not echoed).
     """
     routing = decide_routing(content, message_type)
     logger.info(
@@ -114,15 +128,82 @@ async def process_message(
     if not routing.needs_analysis or not routing.needs_llm:
         return _deterministic_defaults(routing, message_type, content)
 
-    analysis = await _analyze_with_fallback(
-        content, message_id=message_id, user_id=user_id, routing=routing
+    context_messages = await _fetch_context(
+        user_id=user_id, thread_id=thread_id, exclude_message_id=message_id
     )
+
+    analysis = await _analyze_with_fallback(
+        content,
+        message_id=message_id,
+        user_id=user_id,
+        routing=routing,
+        context_messages=context_messages,
+    )
+
+    if message_id and analysis.get("context_updates"):
+        await _apply_validated_updates(
+            analysis["context_updates"],
+            context_messages,
+            message_id,
+            user_id,
+            content,
+        )
+
+    analysis.pop("context_updates", None)
     analysis["routing"] = _routing_record(routing, llm_call_used=True)
     return analysis
 
 
+async def _fetch_context(user_id, thread_id, exclude_message_id) -> list[dict] | None:
+    """Guardedly fetch prior thread messages for context injection.
+
+    A context failure must never block ingestion — ``None`` means the model
+    sees no context and analysis proceeds exactly as in Day 24.
+    """
+    if not thread_id or not user_id:
+        return None
+    try:
+        return await fetch_thread_context(
+            user_id, thread_id, exclude_message_id=exclude_message_id
+        )
+    except Exception as exc:
+        logger.warning(
+            "Context fetch failed (proceeding standalone): %s", exc, exc_info=True
+        )
+        return None
+
+
+async def _apply_validated_updates(
+    candidates: list[dict],
+    context_messages: list[dict] | None,
+    current_message_id: str,
+    user_id: str,
+    current_content: str | None = None,
+) -> None:
+    """Validate model-suggested revisions against the fetched thread and apply
+    the survivors. Both steps are guarded — never raises into the caller."""
+    if not context_messages:
+        return
+    try:
+        valid = validate_context_updates(
+            candidates,
+            context_messages,
+            current_message_id,
+            current_content=current_content,
+        )
+        if valid:
+            applied = await apply_context_updates(valid, current_message_id, user_id)
+            logger.info("Applied %d/%d validated context updates", applied, len(valid))
+    except Exception as exc:
+        logger.warning("Context update apply failed: %s", exc, exc_info=True)
+
+
 async def _analyze_with_fallback(
-    content: str, message_id: str = None, user_id: str = None, routing: RoutingDecision = None
+    content: str,
+    message_id: str = None,
+    user_id: str = None,
+    routing: RoutingDecision = None,
+    context_messages: list[dict] | None = None,
 ) -> dict:
     """Run the single combined analysis, guaranteed to return a dict.
 
@@ -139,6 +220,7 @@ async def _analyze_with_fallback(
             user_id=user_id,
             run_tasks=routing.run_task_extraction,
             routing=routing,
+            context_messages=context_messages,
         )
     except Exception as exc:
         logger.error(

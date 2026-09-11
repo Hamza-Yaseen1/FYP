@@ -27,6 +27,7 @@ class ConnectionResponse(BaseModel):
     provider: Provider
     status: ConnectionStatus
     created_at: datetime
+    gmail_email: Optional[str] = None
 
 
 class ConnectionInDB(BaseModel):
@@ -36,6 +37,9 @@ class ConnectionInDB(BaseModel):
     status: ConnectionStatus = ConnectionStatus.DISCONNECTED
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
+    token_expires_at: Optional[datetime] = None
+    last_fetched_at: Optional[datetime] = None
+    gmail_email: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -46,4 +50,5 @@ def connection_doc_to_response(doc: dict) -> dict:
         "provider": doc["provider"],
         "status": doc["status"],
         "created_at": doc["created_at"],
+        "gmail_email": doc.get("gmail_email"),
     }
