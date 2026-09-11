@@ -524,3 +524,45 @@ def test_post_unknown_phone_number_ignored(client, sync_db, _fake_ai):
     assert res.status_code == 200
     assert res.json() == {"status": "ok"}
     assert sync_db.messages.count_documents({}) == 0
+
+
+# ── US2 Backfill: Negative Webhook Payloads ───────────────────────────
+
+
+def test_post_rejects_malformed_json_body(client, sync_db, _fake_ai):
+    body = b"{this is not valid json"
+    sig = "sha256=" + hmac.new(
+        TEST_SECRET.encode(), body, hashlib.sha256
+    ).hexdigest()
+    res = client.post(
+        "/webhooks/whatsapp",
+        content=body,
+        headers={"X-Hub-Signature-256": sig},
+    )
+    assert res.status_code == 400
+    assert sync_db.messages.count_documents({}) == 0
+
+
+def test_post_rejects_non_sha256_header(client, sync_db, _fake_ai):
+    body = json.dumps(_meta_object_payload(messages=[_text_message()])).encode()
+    res = client.post(
+        "/webhooks/whatsapp",
+        content=body,
+        headers={"X-Hub-Signature-256": "md5=abc123"},
+    )
+    assert res.status_code == 403
+    assert sync_db.messages.count_documents({}) == 0
+
+
+def test_post_rejects_valid_signature_wrong_secret(client, sync_db, _fake_ai):
+    body = json.dumps(_meta_object_payload(messages=[_text_message()])).encode()
+    wrong_sig = "sha256=" + hmac.new(
+        b"completely_different_secret", body, hashlib.sha256
+    ).hexdigest()
+    res = client.post(
+        "/webhooks/whatsapp",
+        content=body,
+        headers={"X-Hub-Signature-256": wrong_sig},
+    )
+    assert res.status_code == 403
+    assert sync_db.messages.count_documents({}) == 0

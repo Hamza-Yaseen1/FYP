@@ -118,7 +118,7 @@ async def ingest_message(
         message_id = str(result.inserted_id)
     except DuplicateKeyError:
         existing = await messages_collection.find_one(
-            {"external_message_id": external_message_id}
+            {"user_id": user_id, "external_message_id": external_message_id}
         )
         if existing is None:
             raise

@@ -15,6 +15,7 @@ from routes.webhooks import router as webhooks_router
 from routes.tasks import router as tasks_router
 from routes.connections import router as connections_router
 from routes.gmail import router as gmail_router, google_router
+from routes.analytics import router as analytics_router
 
 load_dotenv()
 
@@ -34,8 +35,15 @@ async def lifespan(app: FastAPI):
         [("sender", "text"), ("content", "text"), ("ai_analysis.summary", "text")],
         background=True,
     )
+    # Eliminate the legacy global dedupe index (external_message_id alone) —
+    # a cross-user key collision would block a legitimately-distinct second
+    # user's same-key document. Replace with the user-scoped composite.
+    try:
+        await messages_collection.drop_index("external_message_id_1")
+    except Exception:
+        pass
     await messages_collection.create_index(
-        [("external_message_id", 1)],
+        [("user_id", 1), ("external_message_id", 1)],
         unique=True,
         partialFilterExpression={"external_message_id": {"$type": "string"}},
     )
@@ -71,13 +79,38 @@ async def lifespan(app: FastAPI):
 
         _gmail_poller_task = asyncio.create_task(_gmail_poll_loop())
 
+    # Retry-pending sweep for AI analyses that degraded to status="pending"
+    # during an outage. Skipped on the test DB so suites call
+    # retry_pending_analyses directly.
+    _retry_pending_task = None
+    if DB_NAME != "communication_ai_test":
+        from services.retry_pending import retry_pending_analyses
+
+        async def _retry_pending_loop():
+            interval = int(os.getenv("RETRY_INTERVAL_SECONDS", "60"))
+            logger.info("Pending-analysis retry loop started (interval=%ds)", interval)
+            while True:
+                try:
+                    await retry_pending_analyses()
+                except Exception:
+                    logger.exception("Pending-analysis retry cycle failed")
+                await asyncio.sleep(interval)
+
+        _retry_pending_task = asyncio.create_task(_retry_pending_loop())
+
     yield
 
-    # Shut down poller
+    # Shut down pollers
     if _gmail_poller_task is not None:
         _gmail_poller_task.cancel()
         try:
             await _gmail_poller_task
+        except asyncio.CancelledError:
+            pass
+    if _retry_pending_task is not None:
+        _retry_pending_task.cancel()
+        try:
+            await _retry_pending_task
         except asyncio.CancelledError:
             pass
 
@@ -113,3 +146,4 @@ app.include_router(tasks_router)
 app.include_router(connections_router)
 app.include_router(gmail_router)
 app.include_router(google_router)
+app.include_router(analytics_router)
