@@ -5,6 +5,7 @@ import HealthBadge from "@/components/HealthBadge";
 import MessageList from "@/components/MessageList";
 import NeedsAttentionSection from "@/components/NeedsAttentionSection";
 import SimulateMessage from "@/components/SimulateMessage";
+import BulkTestButton from "@/components/BulkTestButton"; // TEMPORARY - for load testing
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 
@@ -146,6 +147,11 @@ export default function DashboardPage() {
         <SimulateMessage
           onSent={() => setRefreshKey((k) => k + 1)}
         />
+      </section>
+
+      {/* TEMPORARY - Bulk load testing */}
+      <section className="rounded-xl border border-dashed border-yellow-500/50 bg-yellow-50/50 p-5 dark:bg-yellow-950/20">
+        <BulkTestButton onComplete={() => setRefreshKey((k) => k + 1)} />
       </section>
     </div>
   );
