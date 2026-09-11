@@ -14,6 +14,7 @@ interface Message {
   source: string;
   status: string;
   state: string;
+  subject?: string;
   ai_analysis?: {
     priority: string;
     confidence: number;
@@ -190,6 +191,13 @@ function MessageCard({
                 explanation={analysis.explanation}
               />
             </div>
+          )}
+
+          {/* Subject line (Gmail messages) */}
+          {msg.subject && (
+            <p className="mt-1.5 text-sm font-medium text-foreground">
+              Re: {msg.subject}
+            </p>
           )}
 
           {/* Original message */}

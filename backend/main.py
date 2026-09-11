@@ -1,3 +1,6 @@
+import asyncio
+import os
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -5,14 +8,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import logging
 
-from database import users_collection, messages_collection, tasks_collection, connections_collection, create_indexes
+from database import users_collection, messages_collection, tasks_collection, connections_collection, create_indexes, DB_NAME
 from routes.auth import router as auth_router
 from routes.messages import router as messages_router
 from routes.webhooks import router as webhooks_router
 from routes.tasks import router as tasks_router
 from routes.connections import router as connections_router
+from routes.gmail import router as gmail_router, google_router
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,7 +52,34 @@ async def lifespan(app: FastAPI):
     )
     await connections_collection.create_index([("user_id", 1)])
     await create_indexes()
+
+    # Start Gmail poller if credentials are configured (skip the test DB —
+    # the poller would hit Google with throwaway test tokens every cycle)
+    _gmail_poller_task = None
+    if os.getenv("GOOGLE_CLIENT_ID") and DB_NAME != "communication_ai_test":
+        from services.gmail import poll_connected_gmail
+
+        async def _gmail_poll_loop():
+            interval = int(os.getenv("GMAIL_POLL_INTERVAL_SECONDS", "30"))
+            logger.info("Gmail poller started (interval=%ds)", interval)
+            while True:
+                try:
+                    await poll_connected_gmail()
+                except Exception:
+                    logger.exception("Gmail poller cycle failed")
+                await asyncio.sleep(interval)
+
+        _gmail_poller_task = asyncio.create_task(_gmail_poll_loop())
+
     yield
+
+    # Shut down poller
+    if _gmail_poller_task is not None:
+        _gmail_poller_task.cancel()
+        try:
+            await _gmail_poller_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="Communication AI Backend", lifespan=lifespan)
@@ -63,9 +96,14 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+def read_root():
+    return {"message":"Backend is running "}
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
 
 
 app.include_router(auth_router)
@@ -73,3 +111,5 @@ app.include_router(messages_router)
 app.include_router(webhooks_router)
 app.include_router(tasks_router)
 app.include_router(connections_router)
+app.include_router(gmail_router)
+app.include_router(google_router)

@@ -16,6 +16,7 @@ interface Message {
   source: string;
   status: string;
   state: string;
+  subject?: string;
   ai_analysis?: {
     priority: string;
     confidence: number;

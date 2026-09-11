@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Connection, createConnection, deleteConnection } from "@/lib/api/connections";
+import { Connection, createConnection, deleteConnection, getGmailAuthUrl } from "@/lib/api/connections";
 
 interface ConnectionCardProps {
   connection: Connection;
@@ -28,6 +28,7 @@ export default function ConnectionCard({ connection, onConnect }: ConnectionCard
 
   const isComingSoon = connection.status === "coming_soon";
   const isConnected = connection.status === "connected";
+  const hasError = connection.status === "error";
 
   const handleConnect = async () => {
     if (connection.provider === "linkedin") return;
@@ -36,7 +37,12 @@ export default function ConnectionCard({ connection, onConnect }: ConnectionCard
     setError(null);
 
     try {
-      await createConnection(connection.provider as "whatsapp" | "gmail");
+      if (connection.provider === "gmail") {
+        const authUrl = await getGmailAuthUrl();
+        window.location.assign(authUrl);
+        return; // redirecting — don't reset loading
+      }
+      await createConnection(connection.provider as "whatsapp");
       onConnect?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to connect");
@@ -79,6 +85,11 @@ export default function ConnectionCard({ connection, onConnect }: ConnectionCard
                 <span className="signal-lamp size-1.5 bg-emerald-500" aria-hidden />
                 Connected
               </span>
+            ) : hasError ? (
+              <span className="inline-flex items-center gap-1.5 text-destructive">
+                <span className="signal-lamp size-1.5 bg-destructive" aria-hidden />
+                Connection error — reconnect below
+              </span>
             ) : (
               "Not connected"
             )}
@@ -91,6 +102,10 @@ export default function ConnectionCard({ connection, onConnect }: ConnectionCard
           <span className="inline-flex rounded-full border border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground">
             Soon
           </span>
+        ) : hasError ? (
+          <Button onClick={handleConnect} disabled={isLoading}>
+            {isLoading ? "Connecting…" : "Reconnect"}
+          </Button>
         ) : isConnected ? (
           <>
             {showConfirm ? (

@@ -292,6 +292,7 @@ class TestAuthCoverage:
         ("POST", "/auth/register"),
         ("POST", "/auth/login"),
         ("POST", "/auth/logout"),
+        ("GET", "/auth/google/callback"),
         ("GET", "/health"),
         ("GET", "/webhooks/whatsapp"),
         ("POST", "/webhooks/whatsapp"),

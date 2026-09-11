@@ -12,6 +12,11 @@ PROMPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts"
 
 MODEL_NAME = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
 
+# Cap output tokens well under the free-tier OTPM limit (1000/min ~= 900+
+# output tokens) so a single analysis never trips Groq's 429 "request too
+# large" guard. With reasoning disabled the JSON answer is ~150-400 tokens.
+MAX_OUTPUT_TOKENS = int(os.getenv("GROQ_MAX_OUTPUT_TOKENS", "700"))
+
 # Single-call analysis prompt: priority + tasks + deadlines + summary +
 # recommended action in ONE response. One message must never cost more
 # than one LLM round-trip (constitution: single LLM call).
@@ -149,7 +154,13 @@ class GroqProvider(BaseLLMProvider):
             model=self.model,
             messages=[{"role": "user", "content": prompt + "\n/no_think"}],
             temperature=0.3,
-            max_tokens=4096,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            # Qwen 3.6 27B reasons by default and burns its whole output
+            # budget (and the Groq OTPM cap) on a "thinking" block that we
+            # never surface. Disable reasoning and ask for strict JSON so
+            # each analysis stays within one small, parseable response.
+            reasoning_effort="none",
+            response_format={"type": "json_object"},
         )
         raw_content = response.choices[0].message.content
         cleaned = clean_response(raw_content)

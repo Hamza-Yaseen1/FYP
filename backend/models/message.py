@@ -69,6 +69,7 @@ class MessageResponse(BaseModel):
     source: str
     status: str
     state: str
+    subject: Optional[str] = None
     ai_analysis: Optional[AIAnalysis] = None
     created_at: datetime
     updated_at: datetime
@@ -91,6 +92,7 @@ def message_doc_to_response(doc: dict) -> dict:
         "source": doc["source"],
         "status": doc["status"],
         "state": doc.get("state", "active"),
+        "subject": doc.get("subject"),
         "ai_analysis": ai_analysis,
         "created_at": doc["created_at"],
         "updated_at": doc["updated_at"],

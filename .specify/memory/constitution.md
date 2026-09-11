@@ -1,27 +1,27 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.12.0 → 1.13.0 (MINOR: new Day 25 Agent Memory / Context
-section added covering purpose, core principles for linking messages, the
-stored conversation/thread/message identity contract, what the system MUST
-NOT do with context, and the quality bar; compliance checklist expanded
-with 7 context-handling checks)
-Modified principles: N/A (Day 25 extends existing principles — I, III, IV,
-V, VII — and the Day 24 Orchestrator rules without redefining them; the
-Single LLM call pipeline rule already covers context passing)
+Version change: 1.13.0 → 1.14.0 (MINOR: new Day 26 Gmail Integration
+section added covering purpose of Gmail connection via Google OAuth,
+security principles (OAuth only, no passwords), token handling rules,
+normalized message format for Gmail emails, connection ownership, and
+quality bar; compliance checklist expanded with 12 Gmail-specific checks)
+Modified principles: N/A (Day 26 extends existing principles — IV (User
+Control), V (Security and Privacy), VII (Progressive Enhancement) — and
+the Day 19 Connection Architecture rules without redefining them)
 Added sections:
-  - Day 25 Agent Memory / Context (purpose of context, core linking
-    principles, stored fields contract for messageId/threadId/conversationId,
-    what the system MUST NOT do, quality bar)
-  - 7 new Compliance Checklist items (Day 25 context handling)
+  - Day 26 Gmail Integration (purpose, OAuth-only security, token handling,
+    normalized email format, connection ownership, what the system MUST
+    NOT do, quality bar)
+  - 12 new Compliance Checklist items (Gmail integration)
 Removed sections: N/A
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ no changes needed
     (Constitution Check gates derive from constitution file)
   - .specify/templates/spec-template.md ✅ no changes needed
-    (requirements format neutral to context rules)
+    (requirements format neutral to Gmail rules)
   - .specify/templates/tasks-template.md ✅ no changes needed
-    (task structure compatible; context tasks follow standard patterns)
+    (task structure compatible; Gmail tasks follow standard patterns)
   - .specify/templates/commands/*.md ✅ N/A — no command templates exist
 Follow-up TODOs: None
 -->
@@ -1600,6 +1600,271 @@ Rules:
 - **Explainability**: Every context-enriched field is dismissible and
   traceable to the linked message(s) that produced it.
 
+### Day 26 Gmail Integration
+
+This section defines the rules for connecting Gmail accounts to the system
+using Google's official OAuth 2.0 flow. It extends Principle IV (User
+Control), Principle V (Security and Privacy), Principle VII (Progressive
+Enhancement), the Day 19 Connection Architecture, and the Normalized Message
+Format from Day 23. Day 26 adds a second real communication channel after
+WhatsApp, proving the system is channel-agnostic.
+
+#### Purpose of Gmail Integration
+
+Allow users to connect their Gmail account so the system can receive and
+process incoming emails through the same AI pipeline used for WhatsApp
+messages. The system MUST use only Google's official OAuth 2.0 flow — no
+passwords, no IMAP, no unofficial libraries.
+
+**Success means**: A user clicks "Connect Gmail", is redirected to Google's
+consent screen, grants permission, and the system begins receiving their
+new emails. Those emails appear on the dashboard as normalized message
+cards, indistinguishable in treatment from WhatsApp messages — same
+priority, same task extraction, same AI analysis. No other user can see,
+use, or detect this Gmail connection.
+
+#### OAuth-Only Security Principle
+
+The system MUST use ONLY Google's official OAuth 2.0 authorization flow.
+Specifically:
+
+1. **No passwords.** The system MUST NEVER ask for, accept, store, log,
+   or transmit a user's Gmail password. This is an absolute prohibition.
+2. **Google OAuth 2.0 only.** All Gmail access goes through Google's
+   official OAuth 2.0 endpoints (`accounts.google.com` for authorization,
+   `oauth2.googleapis.com` for token exchange). Third-party auth
+   libraries, community wrappers, or reverse-engineered endpoints are
+   forbidden.
+3. **Official Google API client.** Use the official Google API Python client
+   (`google-api-python-client`) or direct REST API calls to the Gmail API
+   (`gmail.googleapis.com`). No community libraries that abstract the
+   Gmail API without maintaining official compatibility.
+4. **Minimal scopes.** The OAuth consent screen MUST request only the
+   minimum Gmail scopes needed: `https://www.googleapis.com/auth/gmail.readonly`
+   for reading emails. Write scopes (`gmail.send`, `gmail.modify`) are
+   forbidden at this stage — Day 26 is receive-only.
+5. **Consent is explicit.** Users MUST see Google's consent screen listing
+   exactly what permissions are requested before granting access. The
+   system MUST NOT bypass or automate the consent step.
+
+**Rationale**: Passwords are the weakest link in authentication. OAuth
+delegates credential management to Google, the account owner's trusted
+provider. The system never touches the password and cannot be compromised
+through it.
+
+#### Token Handling Rules
+
+Gmail OAuth tokens (access tokens and refresh tokens) are among the most
+sensitive credentials in the system. These rules extend the Day 19
+Connection Architecture security principles:
+
+1. **Encrypted at rest.** Access tokens and refresh tokens MUST be
+   encrypted with AES-256 (or equivalent) before storage in MongoDB.
+   Plaintext tokens MUST NEVER be stored, logged, or returned.
+2. **Never exposed to frontend.** Tokens MUST NEVER appear in API
+   responses, client-side state, localStorage, sessionStorage, or browser
+   developer tools. The frontend sees only connection status (Connected /
+   Disconnected / Error).
+3. **Backend-only token operations.** Token refresh, validation, and all
+   Gmail API calls using stored tokens MUST happen exclusively on the
+   backend. The frontend never handles tokens directly.
+4. **Environment-based encryption keys.** The AES-256 encryption key for
+   tokens MUST be stored in an environment variable (`TOKEN_ENCRYPTION_KEY`
+   or equivalent), never in code or database.
+5. **Refresh token lifecycle.** The backend MUST automatically refresh
+   expired access tokens using the stored refresh token. Users MUST NOT be
+   prompted to re-authenticate when a token expires — the refresh is
+   invisible to them. If a refresh token is revoked by Google or the user,
+   the connection status MUST transition to `error` with a clear message
+   prompting re-connection.
+6. **Audit trail.** Every token read, write, or refresh operation MUST be
+   logged with `user_id`, timestamp, and operation type for security
+   monitoring.
+7. **Revocation on disconnect.** When a user disconnects their Gmail
+   account, the system MUST revoke the Google token (Google's revocation
+   endpoint) and then delete all stored tokens from the database. Partial
+   cleanup (deleting from DB but not revoking) is a security leak.
+
+**Rationale**: OAuth tokens grant access to a user's entire Gmail inbox.
+Compromised tokens are equivalent to compromised accounts. Encryption at
+rest and backend-only handling ensure tokens are never in a position to be
+leaked.
+
+#### Normalized Email Format
+
+Gmail emails MUST be converted into the same canonical message document
+used by WhatsApp and the simulate endpoint. The AI pipeline, dashboard,
+and database MUST NEVER consume Gmail-specific payloads. The email is
+translated at the ingestion boundary:
+
+```json
+{
+  "userId": "64f...",
+  "source": "gmail",
+  "sender": "Ali <ali@example.com>",
+  "content": "Please review the attached slides before tomorrow.",
+  "receivedAt": "2026-09-10T14:30:00Z",
+  "externalMessageId": "gmail_msg_abc123",
+  "subject": "FYP Slides Review"
+}
+```
+
+Rules:
+
+1. **`source` is `"gmail"`** — an enum value, never free text. The
+   `source` field distinguishes channels; downstream code branches on this
+   field.
+2. **`sender` is human-readable.** Use the sender's display name from the
+   Gmail `From` header when present; fall back to the email address. Format:
+   `"Name <email@example.com>"` or just `"email@example.com"` when no name.
+3. **`content` is the email body text.** For multipart emails, use the
+   `text/plain` part. If only HTML exists, strip tags and store the plain
+   text equivalent. Empty body → empty string (never null).
+4. **`receivedAt` is server time.** The UTC ISO-8601 timestamp when the
+   webhook or polling cycle fetched the email — not the sender-reported
+   `Date` header.
+5. **`externalMessageId` is Gmail's message ID** (`id` field from the
+   Gmail API). It MUST be persisted and MUST key idempotence — duplicate
+   fetches produce zero duplicate documents.
+6. **`subject` is an extra field for Gmail only.** Emails have subjects;
+   WhatsApp messages do not. This field is nullable and MUST NOT be
+   required for non-email channels. The dashboard MAY display it when
+   present.
+7. **`userId` is set server-side.** The owning user is resolved from the
+   verified JWT session — never from query parameters or request body
+   (Day 18 User Isolation Rules, Day 19 Connection Architecture).
+8. **Attachments are NOT ingested in Day 26.** The system reads email body
+   text only. Attachment content, filenames, and metadata are not stored or
+   processed. This may be extended by explicit amendment.
+
+**Rationale**: Normalization keeps the AI core channel-agnostic. Gmail
+emails and WhatsApp messages flow through identical pipelines, receive
+identical analysis, and produce identical dashboard cards. The system
+cannot be confused by different payload shapes.
+
+#### Connection Ownership
+
+Every Gmail connection MUST belong to exactly one user. The same isolation
+rules that apply to WhatsApp connections extend to Gmail:
+
+1. Every Gmail connection document MUST carry a `user_id` field set
+   server-side from the verified JWT.
+2. Every database query for Gmail connections MUST filter by the
+   authenticated user's `user_id` as the first condition.
+3. Requests for another user's Gmail connection MUST return 404 with no
+   distinction between "not found" and "not yours."
+4. Gmail connection deletion MUST only remove the authenticated user's
+   connection — never affect other users' connections.
+5. The system MUST NOT allow users to see, modify, or detect Gmail
+   connections belonging to other users.
+6. Gmail tokens MUST be isolated per user — one user's refresh token MUST
+   NEVER be used to access another user's Gmail.
+
+#### Email Ingestion Flow
+
+```text
+User clicks "Connect Gmail"
+  ↓
+Backend generates OAuth state + redirects to Google consent screen
+  ↓
+User grants permission on Google
+  ↓
+Google redirects back with authorization code
+  ↓
+Backend exchanges code for access + refresh tokens (server-side only)
+  ↓
+Tokens encrypted and stored in MongoDB with user_id
+  ↓
+Connection status → "connected"
+  ↓
+Backend begins polling / watching for new emails (or webhook)
+  ↓
+New email received
+  ↓
+1. Verify it belongs to the connected user
+2. Normalize to canonical message format
+3. Dedupe on externalMessageId
+4. Persist to MongoDB with user_id
+5. Trigger AI pipeline asynchronously
+6. Dashboard renders from stored analysis only
+```
+
+Each step is a distinct responsibility. Token exchange (steps 1-5) happens
+once at connection time. Email ingestion (steps 6+) runs continuously while
+the connection is active. The AI pipeline and dashboard never touch the
+Gmail API directly.
+
+#### What the System MUST NOT Do
+
+- **NEVER ask for or accept Gmail passwords.** OAuth is the only
+  authentication mechanism. Any code path that accepts a password is a
+  critical security violation.
+- **NEVER store tokens in plaintext.** All OAuth tokens MUST be encrypted
+  at rest before database storage. Plaintext tokens in code, database,
+  logs, or responses are blocking violations.
+- **NEVER expose tokens to the frontend.** Tokens MUST NOT appear in API
+  responses, browser storage, URL parameters, or developer tools. The
+  frontend sees only connection status.
+- **NEVER auto-send or auto-reply to emails.** Day 26 is receive-only.
+  Outbound email, auto-replies, and draft creation are out of scope.
+- **NEVER bypass user consent.** The Google consent screen MUST be shown
+  to the user. Tokens obtained without explicit consent are invalid.
+- **NEVER use write-scope OAuth permissions.** `gmail.send` and
+  `gmail.modify` scopes are forbidden. Only `gmail.readonly` is permitted.
+- **NEVER trust client-supplied user IDs.** `userId` for Gmail-derived
+  messages is resolved server-side from the verified JWT, never from
+  request parameters.
+- **NEVER process emails without normalization.** Gmail-specific fields
+  (`snippet`, `payload.headers`, `labelIds`) MUST NOT be read by the AI
+  pipeline, storage layer, or dashboard. Only the normalized format is used.
+- **NEVER skip idempotence.** Duplicate email fetches (from polling
+  overlaps, retries, or reconnections) MUST produce zero duplicate
+  documents, keyed on `externalMessageId`.
+- **NEVER let Gmail tokens persist after disconnect.** When a user
+  disconnects, tokens are revoked with Google and deleted from the
+  database. Partial cleanup is a security leak.
+- **NEVER aggregate Gmail data across users.** Each user's emails are
+  isolated. Cross-user email analytics, comparisons, or combined views are
+  forbidden (Day 18 User Isolation Rules).
+- **NEVER auto-delete old emails.** The system does not manage Gmail
+  mailbox state. It reads and stores normalized copies; the original
+  emails remain untouched in the user's Gmail account.
+
+#### Quality Bar for Day 26
+
+- **OAuth flow**: The full Connect Gmail → Google consent → token
+  exchange → status "connected" flow works end-to-end without errors.
+- **Token security**: 100% of OAuth tokens encrypted at rest; zero
+  plaintext tokens in database, code, logs, or API responses.
+- **Frontend isolation**: Zero tokens, credentials, or raw OAuth data
+  visible in API responses, browser storage, or developer tools.
+- **User isolation**: Two-user isolation test passes for Gmail — User A
+  sees only A's Gmail connection and emails; User B sees only B's.
+- **404 semantics**: Requesting another user's Gmail connection by ID
+  returns 404 identical to non-existent resource.
+- **Normalization fidelity**: A real received Gmail email converts
+  losslessly to the canonical format (`source: "gmail"`, `sender`,
+  `content`, `receivedAt`, `externalMessageId`, `subject`) — verified
+  with a live test email.
+- **End-to-end parity**: A Gmail email and a WhatsApp message produce
+  identical dashboard cards; the pipeline and dashboard cannot distinguish
+  the source (beyond the `source` field).
+- **Idempotency**: Re-fetching the same email produces zero duplicate
+  documents (keyed on `externalMessageId`).
+- **Inbox integration**: Gmail emails appear in the Inbox alongside
+  WhatsApp messages, filterable by source ("Gmail" tab), priority, and
+  search.
+- **Connection lifecycle**: Connect → status "Connected" → Disconnect →
+  status "Disconnected" works end-to-end for Gmail.
+- **Token refresh**: Backend successfully refreshes expired access tokens
+  without user intervention; frontend remains unaware of token lifecycle.
+- **Revocation on disconnect**: Disconnecting Gmail revokes the token
+  with Google and deletes all stored tokens — verified by re-connecting
+  and confirming the old token is invalid.
+- **No regression**: WhatsApp and simulate messages continue to work
+  identically. The new Gmail channel adds to the system without breaking
+  existing channels.
+
 ### Auth Pages UI/UX Principles
 
 Both `/login` and `/signup` share one visual system built on Tailwind CSS +
@@ -1858,5 +2123,16 @@ Before merging any feature branch, verify:
 - [ ] Threads/conversations never span users; linked messages stay individually owned, queryable, and deletable (isolation)
 - [ ] No vector store, embeddings, RAG, or long-term memory layer is used for context (Simplicity First)
 - [ ] Link-resolution failure degrades gracefully — the message is analyzed standalone and ingestion never blocks
+- [ ] Gmail connection uses ONLY Google OAuth 2.0; no passwords are asked for, accepted, stored, or logged
+- [ ] Gmail OAuth requests only `gmail.readonly` scope; write scopes (`gmail.send`, `gmail.modify`) are not requested
+- [ ] Gmail OAuth tokens (access + refresh) are encrypted at rest with AES-256 before database storage
+- [ ] No Gmail tokens, credentials, or raw OAuth data appear in API responses, browser storage, or developer tools
+- [ ] Gmail token refresh happens backend-only; users are not prompted to re-authenticate on token expiry
+- [ ] Gmail emails are normalized to canonical format (`source: "gmail"`, `sender`, `content`, `receivedAt`, `externalMessageId`, `subject`) before storage
+- [ ] Gmail `externalMessageId` keys idempotence — duplicate email fetches produce zero duplicate documents
+- [ ] Gmail connection carries `user_id` set server-side from JWT; every Gmail query filters by `user_id`
+- [ ] Requesting another user's Gmail connection by ID returns 404 identical to non-existent resource
+- [ ] Gmail disconnect revokes the token with Google and deletes all stored tokens from the database
+- [ ] Gmail emails appear in the Inbox alongside WhatsApp messages, filterable by source and priority
 
-**Version**: 1.13.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-08-29
+**Version**: 1.14.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-09-10

@@ -2,6 +2,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+import asyncio
+
 from bson import ObjectId
 from fastapi import BackgroundTasks
 from pymongo.errors import DuplicateKeyError
@@ -11,6 +13,10 @@ from services.ai import process_message
 from services.threads import resolve_and_stamp
 
 logger = logging.getLogger(__name__)
+
+# Keep references to background analyze tasks spawned outside a request
+# context so the event loop does not garbage-collect them mid-flight.
+_pending_tasks: set = set()
 
 
 async def _analyze_and_store(
@@ -52,12 +58,19 @@ async def ingest_message(
     external_message_id: Optional[str] = None,
     message_type: str = "text",
     background_tasks: Optional[BackgroundTasks] = None,
+    subject: Optional[str] = None,
 ) -> str:
     """Normalize, persist, and analyze one inbound message.
 
-    All ingestion paths (real WhatsApp webhook, simulate endpoint) funnel
-    through here so the AI pipeline, storage, and Dashboard never read
-    provider-specific payloads.
+    All ingestion paths (real WhatsApp webhook, simulate endpoint, Gmail
+    poller) funnel through here so the AI pipeline, storage, and Dashboard
+    never read provider-specific payloads.
+
+    ``subject`` is additive and Gmail-specific; it is stored only when
+    provided. When ``background_tasks`` is None (i.e. the call comes from a
+    background task such as the Gmail poller rather than a request handler),
+    analysis is spawned with :func:`asyncio.create_task` and tracked in a
+    module-level set so it is not garbage-collected.
 
     Returns the stored message id. On a duplicate delivery (same
     ``external_message_id``) the existing id is returned and the AI pipeline
@@ -97,6 +110,8 @@ async def ingest_message(
         doc["conversationId"] = conversation_id
     if external_message_id:
         doc["external_message_id"] = external_message_id
+    if subject is not None:
+        doc["subject"] = subject
 
     try:
         result = await messages_collection.insert_one(doc)
@@ -117,5 +132,11 @@ async def ingest_message(
         background_tasks.add_task(
             _analyze_and_store, content, message_id, user_id, thread_id
         )
+    else:
+        task = asyncio.create_task(
+            _analyze_and_store(content, message_id, user_id, thread_id)
+        )
+        _pending_tasks.add(task)
+        task.add_done_callback(_pending_tasks.discard)
 
     return message_id
