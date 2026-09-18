@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,12 +22,13 @@ export default function SearchBar({
   className,
 }: SearchBarProps) {
   const [localValue, setLocalValue] = useState(value);
+  const [prevValue, setPrevValue] = useState(value);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Sync local value with prop value when it changes externally
-  useEffect(() => {
+  if (prevValue !== value) {
+    setPrevValue(value);
     setLocalValue(value);
-  }, [value]);
+  }
 
   const handleChange = (newValue: string) => {
     setLocalValue(newValue); // Update local state immediately for responsive UI
@@ -58,7 +59,7 @@ export default function SearchBar({
         value={localValue}
         onChange={(e) => handleChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-lg border bg-background py-2 pl-9 pr-9 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        className="w-full rounded-lg border border-border bg-card py-2 pl-9 pr-9 text-sm transition-colors placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
       />
       {localValue && (
         <button

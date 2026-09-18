@@ -31,6 +31,14 @@ class AIAnalysis(BaseModel):
     routing: Optional[RoutingRecord] = None
 
 
+class ContextUpdate(BaseModel):
+    field: str
+    value: str
+    source_message_id: str
+    reason: str
+    applied_at: datetime
+
+
 class MessageCreate(BaseModel):
     sender: str
     content: str
@@ -53,11 +61,15 @@ class MessageUpdate(BaseModel):
 
 class MessageResponse(BaseModel):
     id: str
+    messageId: Optional[str] = None
+    threadId: Optional[str] = None
+    conversationId: Optional[str] = None
     sender: str
     content: str
     source: str
     status: str
     state: str
+    subject: Optional[str] = None
     ai_analysis: Optional[AIAnalysis] = None
     created_at: datetime
     updated_at: datetime
@@ -72,11 +84,15 @@ def message_doc_to_response(doc: dict) -> dict:
 
     return {
         "id": str(doc["_id"]),
+        "messageId": doc.get("messageId", str(doc["_id"])),
+        "threadId": doc.get("threadId"),
+        "conversationId": doc.get("conversationId"),
         "sender": doc["sender"],
         "content": doc["content"],
         "source": doc["source"],
         "status": doc["status"],
         "state": doc.get("state", "active"),
+        "subject": doc.get("subject"),
         "ai_analysis": ai_analysis,
         "created_at": doc["created_at"],
         "updated_at": doc["updated_at"],

@@ -5,6 +5,7 @@ import HealthBadge from "@/components/HealthBadge";
 import MessageList from "@/components/MessageList";
 import NeedsAttentionSection from "@/components/NeedsAttentionSection";
 import SimulateMessage from "@/components/SimulateMessage";
+import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 
 interface Task {
@@ -49,12 +50,13 @@ export default function DashboardPage() {
   const urgentTasks = pendingTasks.filter(
     (t) => t.priority_indicator || (t.deadline && ["asap", "tonight", "today", "right now"].includes(t.deadline.toLowerCase()))
   );
+  const completedTasks = tasks.length - pendingTasks.length;
 
   return (
-    <div className="p-6 space-y-8">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
             Good morning, Hamza
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -68,84 +70,83 @@ export default function DashboardPage() {
 
       {/* Summary cards */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border bg-card p-5">
-          <div className="flex items-center gap-3">
-            <span className="size-2.5 rounded-full bg-red-500" />
-            <span className="text-sm text-muted-foreground">Urgent</span>
-          </div>
-          <p className="mt-3 text-3xl font-bold">{urgentTasks.length}</p>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <p className="triage-label text-muted-foreground">Urgent</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight">{urgentTasks.length}</p>
         </div>
-        <div className="rounded-xl border bg-card p-5">
-          <div className="flex items-center gap-3">
-            <span className="size-2.5 rounded-full bg-yellow-500" />
-            <span className="text-sm text-muted-foreground">Pending</span>
-          </div>
-          <p className="mt-3 text-3xl font-bold">{pendingTasks.length}</p>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <p className="triage-label text-muted-foreground">Pending</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight text-primary">{pendingTasks.length}</p>
         </div>
-        <div className="rounded-xl border bg-card p-5">
-          <div className="flex items-center gap-3">
-            <span className="size-2.5 rounded-full bg-emerald-500" />
-            <span className="text-sm text-muted-foreground">Completed</span>
-          </div>
-          <p className="mt-3 text-3xl font-bold">{tasks.length - pendingTasks.length}</p>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <p className="triage-label text-muted-foreground">Completed</p>
+          <p className="mt-2 text-3xl font-semibold tracking-tight">{completedTasks}</p>
         </div>
       </div>
 
       {/* Needs attention */}
-      <div>
-        <h2 className="mb-4 text-lg font-semibold">Needs Your Attention</h2>
-        <div className="space-y-3">
+      <section>
+        <h2 className="triage-label mb-3 text-muted-foreground">Needs your attention</h2>
+        <div className="space-y-2.5">
           {pendingTasks.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No pending tasks.</p>
+            <div className="rounded-xl border border-dashed border-border py-12 text-center">
+              <p className="text-sm text-muted-foreground">No pending tasks. You&apos;re all caught up.</p>
+            </div>
           ) : (
             pendingTasks.slice(0, 5).map((task) => (
               <div
                 key={task.id}
-                className="flex items-center justify-between rounded-xl border bg-card p-4"
+                className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-4"
               >
-                <div className="flex items-center gap-4">
-                  <span className={`size-2.5 shrink-0 rounded-full ${task.priority_indicator ? "bg-red-500" : "bg-yellow-500"}`} />
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`signal-lamp shrink-0 ${
+                      task.priority_indicator ? "bg-ember" : "bg-primary"
+                    }`}
+                    aria-hidden
+                  />
                   <div>
                     <p className="text-sm font-medium">{task.description}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
                       {task.source_message_preview}
                     </p>
                   </div>
                 </div>
                 {task.deadline && (
-                  <span className="text-xs text-muted-foreground hidden sm:inline">
-                    Deadline: {task.deadline}
+                  <span className="hidden shrink-0 font-mono text-[11px] text-muted-foreground sm:inline">
+                    by {task.deadline}
                   </span>
                 )}
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => markDone(task.id)}
-                  className="shrink-0 rounded-lg border px-2 py-1 text-[11px] text-muted-foreground hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/20 transition-colors"
-                  title="Mark as done"
+                  className="shrink-0"
                 >
                   Done
-                </button>
+                </Button>
               </div>
             ))
           )}
         </div>
-      </div>
+      </section>
 
       {/* Flagged messages */}
       <NeedsAttentionSection refreshKey={refreshKey} />
 
       {/* Recent messages */}
-      <div>
-        <h2 className="mb-4 text-lg font-semibold">Recent Messages</h2>
+      <section>
+        <h2 className="triage-label mb-3 text-muted-foreground">Recent messages</h2>
         <MessageList refreshKey={refreshKey} />
-      </div>
+      </section>
 
       {/* Simulate message */}
-      <div className="rounded-xl border bg-card p-5">
-        <h2 className="mb-3 text-lg font-semibold">Simulate Message</h2>
+      <section className="rounded-xl border border-border bg-card p-5">
+        <h2 className="triage-label mb-3 text-muted-foreground">Simulate a message</h2>
         <SimulateMessage
           onSent={() => setRefreshKey((k) => k + 1)}
         />
-      </div>
+      </section>
     </div>
   );
 }

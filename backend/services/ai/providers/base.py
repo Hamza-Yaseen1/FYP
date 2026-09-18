@@ -10,9 +10,12 @@ class AIAnalysisResult(BaseModel):
     recommended_actions: list[str] = []
     tasks_extracted: list[dict] = []
     deadlines: list[str] = []
+    context_updates: list[dict] = []  # optional validated revisions (Day 25)
 
 
 class BaseLLMProvider(ABC):
     @abstractmethod
-    async def analyze(self, message: str) -> AIAnalysisResult:
+    async def analyze(
+        self, message: str, context: list[dict] | None = None
+    ) -> AIAnalysisResult:
         pass

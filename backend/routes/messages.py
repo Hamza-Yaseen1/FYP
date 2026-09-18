@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from bson import ObjectId
 from typing import Optional
@@ -12,6 +13,9 @@ from models.message import (
     message_doc_to_response,
 )
 from services.ai import process_message
+from services.threads import resolve_and_stamp
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -21,17 +25,43 @@ async def create_message(
     payload: MessageCreate, current_user: dict = Depends(get_current_user)
 ):
     now = datetime.now(timezone.utc)
+    uid = str(current_user["_id"])
+
+    _id = ObjectId()
+    thread_id, conversation_id = None, None
+    try:
+        thread_id, conversation_id = await resolve_and_stamp(
+            uid, payload.source, payload.sender, now
+        )
+    except Exception as exc:
+        logger.warning(
+            "Thread resolution failed for POST /messages; stored standalone: %s",
+            exc,
+            exc_info=True,
+        )
+
     doc = {
         **payload.model_dump(),
-        "user_id": str(current_user["_id"]),
+        "_id": _id,
+        "messageId": str(_id),
+        "user_id": uid,
         "state": "active",
         "created_at": now,
         "updated_at": now,
+        "received_at": now,
     }
-    result = await messages_collection.insert_one(doc)
-    doc["_id"] = result.inserted_id
+    if thread_id:
+        doc["threadId"] = thread_id
+        doc["conversationId"] = conversation_id
 
-    ai_analysis = await process_message(payload.content, message_id=str(result.inserted_id), user_id=str(current_user["_id"]))
+    result = await messages_collection.insert_one(doc)
+
+    ai_analysis = await process_message(
+        payload.content,
+        message_id=str(result.inserted_id),
+        user_id=uid,
+        thread_id=thread_id,
+    )
     await messages_collection.update_one(
         {"_id": result.inserted_id},
         {"$set": {"ai_analysis": ai_analysis}},

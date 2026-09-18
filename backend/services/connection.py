@@ -25,6 +25,7 @@ class ConnectionService:
                 "provider": doc["provider"],
                 "status": doc["status"],
                 "created_at": doc["created_at"],
+                "gmail_email": doc.get("gmail_email"),
             })
         logger.debug(f"Found {len(connections)} connections for user {user_id}")
         return connections
@@ -47,7 +48,45 @@ class ConnectionService:
             "provider": doc["provider"],
             "status": doc["status"],
             "created_at": doc["created_at"],
+            "gmail_email": doc.get("gmail_email"),
         }
+
+    async def upsert_gmail_connection(
+        self,
+        user_id: str,
+        access_token: str,
+        refresh_token: str,
+        token_expires_at: datetime,
+        gmail_email: Optional[str] = None,
+    ) -> None:
+        """Create or replace the user's Gmail connection with new tokens.
+
+        Tokens must already be encrypted by the caller. Gmail is single
+        connection per user, so a prior row for the same user is overwritten
+        (spec assumption: connecting again re-establishes the connection).
+        """
+        now = datetime.utcnow()
+        await self.collection.update_one(
+            {"user_id": user_id, "provider": Provider.GMAIL.value},
+            {
+                "$set": {
+                    "status": ConnectionStatus.CONNECTED.value,
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "token_expires_at": token_expires_at,
+                    "gmail_email": gmail_email,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {
+                    "created_at": now,
+                },
+            },
+            upsert=True,
+        )
+        logger.info(
+            f"Gmail connection upserted for user {user_id} "
+            f"(email={gmail_email or 'unknown'})"
+        )
 
     async def get_connection_with_tokens(self, connection_id: str, user_id: str) -> Optional[dict]:
         if not ObjectId.is_valid(connection_id):
@@ -107,9 +146,72 @@ class ConnectionService:
             "created_at": doc["created_at"],
         }
 
-    async def delete_connection(self, connection_id: str, user_id: str) -> bool:
+    async def update_gmail_tokens(
+        self,
+        connection_id: str,
+        user_id: str,
+        access_token: str,
+        token_expires_at: datetime,
+    ) -> bool:
+        """Refresh the stored (already-encrypted) access token in place."""
         if not ObjectId.is_valid(connection_id):
             return False
+        result = await self.collection.update_one(
+            {"_id": ObjectId(connection_id), "user_id": user_id},
+            {
+                "$set": {
+                    "access_token": access_token,
+                    "token_expires_at": token_expires_at,
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+        return result.modified_count > 0
+
+    async def set_connection_error(self, connection_id: str, user_id: str) -> bool:
+        """Flip a connection to the error state (e.g. revoked Google token)."""
+        if not ObjectId.is_valid(connection_id):
+            return False
+        result = await self.collection.update_one(
+            {"_id": ObjectId(connection_id), "user_id": user_id},
+            {
+                "$set": {
+                    "status": ConnectionStatus.ERROR.value,
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+        )
+        return result.modified_count > 0
+
+    async def delete_connection(self, connection_id: str, user_id: str) -> bool:
+        """Delete a connection. For Gmail, revoke the Google OAuth grant first.
+
+        Revocation is best-effort: failure is logged but does not prevent
+        the DB row from being removed (the user sees success either way).
+        """
+        if not ObjectId.is_valid(connection_id):
+            return False
+
+        # Fetch doc before deleting so we can revoke Gmail tokens
+        doc = await self.collection.find_one({
+            "_id": ObjectId(connection_id),
+            "user_id": user_id,
+        })
+        if not doc:
+            logger.debug(f"Connection {connection_id} not found for deletion")
+            return False
+
+        # Best-effort Google revoke for Gmail connections
+        if doc.get("provider") == "gmail" and doc.get("refresh_token"):
+            try:
+                from services.gmail import revoke_google_access
+                await revoke_google_access(doc["refresh_token"])
+            except Exception:
+                logger.warning(
+                    "Gmail revoke failed for connection %s — proceeding with delete",
+                    connection_id,
+                    exc_info=True,
+                )
 
         logger.info(f"Deleting connection {connection_id} for user {user_id}")
         result = await self.collection.delete_one({

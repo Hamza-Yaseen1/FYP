@@ -3,6 +3,7 @@ import json
 import logging
 from openai import AsyncOpenAI
 from .base import BaseLLMProvider, AIAnalysisResult
+from ..context import build_context_block
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +75,19 @@ class OpenAIProvider(BaseLLMProvider):
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = "gpt-4o-mini"
 
-    async def analyze(self, message: str) -> AIAnalysisResult:
-        prompt = COMPREHENSIVE_ANALYSIS_PROMPT.format(message=message)
+    async def analyze(
+        self,
+        message: str,
+        context: list[dict] | None = None,
+        current_message_id: str | None = None,
+    ) -> AIAnalysisResult:
+        prompt = COMPREHENSIVE_ANALYSIS_PROMPT
+        block = build_context_block(context, current_message_id) if context else None
+        if block:
+            prompt = prompt.replace(
+                "**MESSAGE TO ANALYZE:**", block + "\n\n**MESSAGE TO ANALYZE:**"
+            )
+        prompt = prompt.format(message=message)
         
         logger.info(f"📤 Calling OpenAI API with model: {self.model}")
 
@@ -103,6 +115,7 @@ class OpenAIProvider(BaseLLMProvider):
             result.setdefault("recommended_actions", [])
             result.setdefault("tasks_extracted", [])
             result.setdefault("deadlines", [])
+            result.setdefault("context_updates", [])
             
             logger.info(f"✅ Analysis successful - Priority: {result['priority']}, Confidence: {result['confidence']}")
             

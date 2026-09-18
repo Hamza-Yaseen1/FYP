@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getTasks, completeTask, snoozeTask } from "@/lib/api/tasks";
 import TaskCard from "./TaskCard";
@@ -42,15 +42,15 @@ export default function TaskList({ refreshKey }: { refreshKey?: number }) {
     };
   }, [refreshKey]);
 
-  const handleComplete = async (taskId: string) => {
+  const handleComplete = useCallback(async (taskId: string) => {
     await completeTask(taskId);
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
-  };
+  }, []);
 
-  const handleSnooze = async (taskId: string, duration: string) => {
+  const handleSnooze = useCallback(async (taskId: string, duration: string) => {
     await snoozeTask(taskId, duration);
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
-  };
+  }, []);
 
   const handleViewMessage = (taskId: string) => {
     // Navigate to inbox with message ID
@@ -63,7 +63,7 @@ export default function TaskList({ refreshKey }: { refreshKey?: number }) {
 
   if (tasks.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed py-12 text-center">
+      <div className="rounded-xl border border-dashed border-border py-12 text-center">
         <p className="text-sm text-muted-foreground">No tasks found</p>
       </div>
     );

@@ -392,7 +392,7 @@ class TestCreateMessageRouting:
 
         calls = []
 
-        async def fake_process(content, message_id=None, user_id=None, message_type="text"):
+        async def fake_process(content, message_id=None, user_id=None, message_type="text", thread_id=None):
             calls.append({"content": content, "message_id": message_id})
             return {
                 "priority": "normal",
@@ -436,6 +436,40 @@ class TestCreateMessageRouting:
         assert not hasattr(messages_mod, "analyze_message")
 
 
+class TestStandaloneMessageShape:
+    """US2/US3: an unlinked message keeps null identity + the Day 24 shape."""
+
+    def test_unlinked_message_returns_null_identity_and_day24_analysis(
+        self, client, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "services.ai.analyzer.get_provider", lambda: _US3FakeProvider()
+        )
+        register(client)
+
+        res = client.post(
+            "/messages",
+            json={
+                "sender": "Ali",
+                "content": "Send me the slides tonight",
+                "source": "simulated",
+            },
+        )
+        assert res.status_code == 201
+        body = res.json()
+
+        assert body["messageId"] == body["id"]
+        assert body["threadId"] is None
+        assert body["conversationId"] is None
+
+        ai = body["ai_analysis"]
+        for field in TestUS3RoutingContract.LEGACY_FIELDS:
+            assert field in ai, f"missing legacy field: {field}"
+        assert ai["priority"] == "important"
+        assert ai["provider"] == "groq"
+        assert ai["status"] == "completed"
+
+
 class _US3FakeResult:
     priority = "important"
     confidence = 0.7
@@ -447,7 +481,7 @@ class _US3FakeResult:
 
 
 class _US3FakeProvider:
-    async def analyze(self, message):
+    async def analyze(self, message, context=None):
         return _US3FakeResult()
 
 
@@ -506,3 +540,34 @@ class TestUS3RoutingContract:
         assert routing["triggers"]
         assert routing["llm_call_used"] is True
         assert routing["decided_at"] is not None
+
+    def test_create_message_identity_fields_are_additive(
+        self, client, monkeypatch
+    ):
+        """US3/SC-005: the three identity fields ride along without changing
+        any pre-existing response field."""
+        monkeypatch.setattr(
+            "services.ai.analyzer.get_provider", lambda: _US3FakeProvider()
+        )
+        register(client)
+
+        res = client.post(
+            "/messages",
+            json={
+                "sender": "Ali",
+                "content": "Send me the slides tonight",
+                "source": "simulated",
+            },
+        )
+        assert res.status_code == 201
+        body = res.json()
+
+        assert "messageId" in body and body["messageId"] == body["id"]
+        assert "threadId" in body
+        assert "conversationId" in body
+
+        ai = body["ai_analysis"]
+        for field in self.LEGACY_FIELDS:
+            assert field in ai, f"missing legacy field: {field}"
+        assert ai["priority"] == "important"
+        assert ai["status"] == "completed"

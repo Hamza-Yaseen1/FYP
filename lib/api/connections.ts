@@ -72,3 +72,20 @@ export async function deleteConnection(connectionId: string): Promise<void> {
     throw new Error(error.detail || "Failed to disconnect account. Please try again later.");
   }
 }
+
+export async function getGmailAuthUrl(): Promise<string> {
+  const response = await fetch(`${API_BASE}/connections/gmail/auth-url`, {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      throw new Error("Please log in to connect Gmail.");
+    }
+    throw new Error(error.detail || "Failed to start Gmail connect. Please try again.");
+  }
+
+  const data = await response.json();
+  return data.auth_url;
+}

@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, Clock, Mail, MessageCircle } from "lucide-react";
+import { Clock, Mail, MessageCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useTimeAgo } from "@/lib/use-time-ago";
 
@@ -27,6 +27,9 @@ const sourceIcons: Record<string, typeof Mail> = {
   gmail: Mail,
 };
 
+const pillBase =
+  "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4";
+
 export default function NeedsAttentionCard({
   message,
 }: {
@@ -43,22 +46,26 @@ export default function NeedsAttentionCard({
     task?.description ?? analysis?.summary ?? message.content ?? "";
 
   return (
-    <div className="overflow-hidden rounded-xl border border-red-500/25 bg-card transition-colors hover:border-red-500/50">
+    <div className="overflow-hidden rounded-xl border border-ember/20 bg-card transition-colors hover:border-ember/40">
       <div className="p-4">
         {/* Header */}
         <div className="flex items-center justify-between gap-2">
-          <Badge className="gap-1 border-red-500/25 bg-red-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400">
-            <AlertTriangle className="size-3" aria-hidden />
-            Needs Attention
+          <Badge
+            variant="outline"
+            className={`${pillBase} border-ember/25 bg-ember/10 text-ember`}
+          >
+            Needs attention
           </Badge>
-          <span className="shrink-0 text-xs text-muted-foreground">
+          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
             {timeLabel}
           </span>
         </div>
 
         {/* Task title */}
         {title && (
-          <h3 className="mt-3 text-sm font-semibold leading-snug">{title}</h3>
+          <h3 className="mt-3 text-base font-semibold leading-snug tracking-tight">
+            {title}
+          </h3>
         )}
 
         {/* Source + sender */}
@@ -67,16 +74,16 @@ export default function NeedsAttentionCard({
             <SourceIcon className="size-3.5 shrink-0" aria-hidden />
           )}
           <span>
-            {sourceLabel} • {message.sender}
+            {sourceLabel} · {message.sender}
           </span>
         </p>
 
         {/* Deadline */}
         {deadline && (
-          <div className="mt-3 inline-flex max-w-full items-center gap-1.5 rounded-md border border-red-500/25 bg-red-500/10 px-2 py-1">
-            <Clock className="size-3.5 shrink-0 text-red-400" aria-hidden />
-            <span className="truncate text-xs text-red-300">
-              <span className="font-semibold">Deadline:</span> {deadline}
+          <div className="mt-3 inline-flex max-w-full items-center gap-1.5 rounded-full border border-ember/25 bg-ember/10 px-2 py-0.5">
+            <Clock className="size-3.5 shrink-0 text-ember" aria-hidden />
+            <span className="truncate font-mono text-[11px] font-medium text-ember">
+              by {deadline}
             </span>
           </div>
         )}
@@ -93,12 +100,9 @@ export default function NeedsAttentionCard({
 
         {/* Recommended action */}
         {analysis?.recommended_action && (
-          <div className="mt-3 rounded-lg border border-blue-500/20 bg-blue-500/[0.07] p-3">
-            <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-blue-400">
-              <ArrowRight className="size-3" aria-hidden />
-              Recommended Action
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-blue-100/90">
+          <div className="mt-3 rounded-lg bg-muted/60 p-3">
+            <p className="triage-label text-primary">Recommended action</p>
+            <p className="mt-1 text-xs leading-relaxed text-foreground/90">
               {analysis.recommended_action}
             </p>
           </div>

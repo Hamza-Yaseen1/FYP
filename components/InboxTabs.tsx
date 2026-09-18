@@ -22,7 +22,12 @@ export default function InboxTabs({
   className,
 }: InboxTabsProps) {
   return (
-    <div className={cn("flex gap-1 rounded-lg border bg-muted p-1", className)}>
+    <div
+      className={cn(
+        "inline-flex flex-wrap items-center gap-0.5 rounded-lg border border-border bg-muted/60 p-1",
+        className
+      )}
+    >
       {tabs.map((tab) => (
         <button
           key={tab.id}
@@ -38,10 +43,10 @@ export default function InboxTabs({
           {tab.count !== undefined && (
             <span
               className={cn(
-                "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
                 activeTab === tab.id
                   ? "bg-primary/10 text-primary"
-                  : "bg-muted-foreground/10 text-muted-foreground"
+                  : "bg-foreground/5 text-muted-foreground"
               )}
             >
               {tab.count}

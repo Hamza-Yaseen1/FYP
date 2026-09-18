@@ -9,9 +9,9 @@ interface LoadingSkeletonProps {
 
 export default function LoadingSkeleton({ count = 3, className }: LoadingSkeletonProps) {
   return (
-    <div className={cn("space-y-3", className)}>
+    <div className={cn("space-y-2.5", className)}>
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="animate-pulse rounded-xl border bg-card p-4">
+        <div key={i} className="animate-pulse rounded-xl border border-border bg-card p-4">
           <div className="flex items-start gap-3">
             <div className="size-9 rounded-full bg-muted" />
             <div className="flex-1 space-y-2">

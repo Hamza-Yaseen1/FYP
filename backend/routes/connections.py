@@ -24,6 +24,11 @@ async def create_connection(
     payload: ConnectionCreate,
     current_user: dict = Depends(get_current_user)
 ):
+    if payload.provider == Provider.GMAIL:
+        raise HTTPException(
+            status_code=400,
+            detail="Use the Gmail connect flow (GET /connections/gmail/auth-url)",
+        )
     service = ConnectionService(db)
     try:
         connection = await service.create_connection(

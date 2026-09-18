@@ -178,7 +178,7 @@ class _FakeProvider:
     def __init__(self):
         self.calls = 0
 
-    async def analyze(self, message):
+    async def analyze(self, message, context=None):
         self.calls += 1
         return _FakeResult()
 
@@ -429,7 +429,7 @@ def test_routing_record_complete(monkeypatch):
 
 
 class _RaisingProvider:
-    async def analyze(self, message):
+    async def analyze(self, message, context=None):
         raise RuntimeError("Groq rate limit / daily token cap hit")
 
 
