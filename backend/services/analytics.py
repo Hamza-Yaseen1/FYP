@@ -8,6 +8,7 @@ Response is computed on demand per request from live data; nothing is stored
 or cached beyond request lifetime.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -31,17 +32,29 @@ def _period_range(period: str) -> tuple[datetime, datetime]:
 
 
 async def build_analytics_response(user_id: str, period: str) -> dict:
-    """Assemble the full analytics snapshot for one user and period."""
+    """Assemble the full analytics snapshot for one user and period.
+
+    The five aggregations are independent user-scoped reads, so they run
+    concurrently (asyncio.gather) instead of serially waiting on the same
+    MongoDB connection.
+    """
     from_dt, to_dt = _period_range(period)
+    total, by_priority, by_source, tasks, trends = await asyncio.gather(
+        _message_total(user_id, from_dt, to_dt),
+        _message_priority_buckets(user_id, from_dt, to_dt),
+        _message_source_counts(user_id, from_dt, to_dt),
+        _tasks_summary(user_id, from_dt, to_dt),
+        _message_trends(user_id, from_dt, to_dt, period),
+    )
     return {
         "period": period,
         "from": from_dt,
         "to": to_dt,
-        "total": await _message_total(user_id, from_dt, to_dt),
-        "by_priority": await _message_priority_buckets(user_id, from_dt, to_dt),
-        "by_source": await _message_source_counts(user_id, from_dt, to_dt),
-        "tasks": await _tasks_summary(user_id, from_dt, to_dt),
-        "trends": await _message_trends(user_id, from_dt, to_dt, period),
+        "total": total,
+        "by_priority": by_priority,
+        "by_source": by_source,
+        "tasks": tasks,
+        "trends": trends,
     }
 
 
@@ -97,10 +110,16 @@ async def _tasks_summary(
     (resolved from ``source_message_id``, always stayed within the same
     user's documents). If the parent message is missing, the task falls back
     to its own ``created_at``.
+
+    Previously all tasks for a user were loaded into Python and filtered.
+    Now the Mongo query pre-filters to the period window via ``created_at``
+    (a safe upper/lower bound on any task that could count), and only the
+    lightweight fields needed for in-Python scoping are transferred.
     """
-    task_docs = await tasks_collection.find({"user_id": user_id}).to_list(
-        length=10_000
-    )
+    task_docs = await tasks_collection.find(
+        {"user_id": user_id, "created_at": {"$gte": from_dt, "$lte": to_dt}},
+        {"_id": 0, "source_message_id": 1, "created_at": 1, "status": 1, "user_id": 1},
+    ).to_list(length=10_000)
     if not task_docs:
         return {"total": 0, "completed": 0}
 

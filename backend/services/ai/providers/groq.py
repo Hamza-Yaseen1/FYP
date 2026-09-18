@@ -155,11 +155,10 @@ class GroqProvider(BaseLLMProvider):
             messages=[{"role": "user", "content": prompt + "\n/no_think"}],
             temperature=0.3,
             max_tokens=MAX_OUTPUT_TOKENS,
-            # Qwen 3.6 27B reasons by default and burns its whole output
-            # budget (and the Groq OTPM cap) on a "thinking" block that we
-            # never surface. Disable reasoning and ask for strict JSON so
-            # each analysis stays within one small, parseable response.
-            reasoning_effort="none",
+            # Disable heavy reasoning for faster responses and lower token usage.
+            # Use 'low' reasoning effort and strict JSON format so each analysis
+            # stays within one small, parseable response.
+            reasoning_effort="low",
             response_format={"type": "json_object"},
         )
         raw_content = response.choices[0].message.content

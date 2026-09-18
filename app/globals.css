@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
-  Signal Desk — a clean, purple-forward SaaS token system.
+  Communication Overload Management — a clean, purple-forward SaaS token system.
   Light mode (default) is white + soft lavender; dark mode is a quiet gray-black.
   All semantic tokens are defined as CSS variables so every component adapts.
 */
@@ -67,6 +67,11 @@
   --sidebar-accent-foreground: var(--ivory);
   --sidebar-border: var(--hairline);
   --sidebar-ring: var(--signal);
+
+  /* Pastel accent trio (soft blue → pink → yellow) for gradient borders + glows */
+  --pastel-a: oklch(0.72 0.08 245);
+  --pastel-b: oklch(0.74 0.09 350);
+  --pastel-c: oklch(0.8 0.09 95);
 }
 
 .dark {
@@ -115,6 +120,10 @@
   --sidebar-accent-foreground: var(--ivory);
   --sidebar-border: var(--hairline);
   --sidebar-ring: var(--signal);
+
+  --pastel-a: oklch(0.6 0.07 245);
+  --pastel-b: oklch(0.6 0.08 350);
+  --pastel-c: oklch(0.65 0.09 95);
 }
 
 @theme inline {
@@ -176,6 +185,53 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+@theme {
+  --animate-drift-a: drift-a 18s ease-in-out infinite;
+  --animate-drift-b: drift-b 24s ease-in-out infinite;
+  --animate-drift-c: drift-c 21s ease-in-out infinite;
+  --animate-pan: pan 14s ease-in-out infinite;
+
+  @keyframes drift-a {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(2.5rem, -1.5rem, 0) scale(1.08);
+    }
+  }
+
+  @keyframes drift-b {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0) scale(1.04);
+    }
+    50% {
+      transform: translate3d(-2rem, 1.75rem, 0) scale(0.96);
+    }
+  }
+
+  @keyframes drift-c {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(1.5rem, 1.25rem, 0) scale(1.12);
+    }
+  }
+
+  @keyframes pan {
+    0%,
+    100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--hairline) transparent;
@@ -206,5 +262,50 @@
   .signal-lamp {
     @apply inline-block size-1.5 rounded-full;
     box-shadow: 0 0 0 1px color-mix(in oklch, currentColor 22%, transparent);
+  }
+}
+
+@layer components {
+  /* Pastel gradient border ring (soft blue → pink → yellow, low opacity) */
+  .pastel-border {
+    position: relative;
+  }
+  .pastel-border::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      135deg,
+      color-mix(in oklch, var(--pastel-a) 55%, transparent),
+      color-mix(in oklch, var(--pastel-b) 55%, transparent),
+      color-mix(in oklch, var(--pastel-c) 55%, transparent)
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  /* Frosted glass surface for major cards and containers */
+  .glass-card {
+    background: color-mix(in oklch, var(--surface) 74%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.35);
+    backdrop-filter: blur(18px) saturate(1.35);
+  }
+
+  /* Soft, calm pastel-tinted shadow (no harsh drops) */
+  .pastel-shadow {
+    box-shadow:
+      0 1px 2px oklch(0.5 0.02 260 / 0.05),
+      0 24px 48px -24px color-mix(in oklch, var(--pastel-a) 30%, transparent),
+      0 12px 32px -20px color-mix(in oklch, var(--pastel-b) 26%, transparent);
   }
 }

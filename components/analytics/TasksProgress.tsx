@@ -19,7 +19,7 @@ interface TasksProgressProps {
 export default function TasksProgress({ total, completed }: TasksProgressProps) {
   if (total === 0) {
     return (
-      <Card>
+      <Card className="pastel-border ring-0">
         <CardHeader>
           <CardTitle>Tasks Completed</CardTitle>
         </CardHeader>
@@ -37,7 +37,7 @@ export default function TasksProgress({ total, completed }: TasksProgressProps) 
   ];
 
   return (
-    <Card>
+    <Card className="pastel-border ring-0">
       <CardHeader>
         <CardTitle>Tasks Completed</CardTitle>
       </CardHeader>

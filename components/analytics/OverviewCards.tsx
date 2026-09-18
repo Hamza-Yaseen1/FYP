@@ -21,7 +21,7 @@ export default function OverviewCards({ total, byPriority }: OverviewCardsProps)
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
       {items.map((item) =>
         item.key === "total" ? (
-          <Card key={item.key} className="bg-primary ring-primary/30">
+          <Card key={item.key} className="pastel-border ring-0 bg-primary">
             <CardContent>
               <p className="triage-label text-primary-foreground/80">
                 {item.label}
@@ -32,7 +32,7 @@ export default function OverviewCards({ total, byPriority }: OverviewCardsProps)
             </CardContent>
           </Card>
         ) : (
-          <Card key={item.key}>
+          <Card key={item.key} className="pastel-border ring-0">
             <CardContent>
               <p className="triage-label text-muted-foreground">{item.label}</p>
               <p className="mt-2 text-3xl font-semibold tracking-tight">

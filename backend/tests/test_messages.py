@@ -416,7 +416,9 @@ class TestCreateMessageRouting:
                 },
             }
 
-        monkeypatch.setattr("routes.messages.process_message", fake_process)
+        # POST /messages analyzes in the background via webhook_ingest, so the
+        # module-level process_message name is patched there.
+        monkeypatch.setattr("services.webhook_ingest.process_message", fake_process)
         register(client)
 
         res = client.post(
@@ -431,8 +433,12 @@ class TestCreateMessageRouting:
         assert len(calls) == 1
         assert calls[0]["content"] == "Send me the slides tonight"
         assert calls[0]["message_id"] is not None
-        assert res.json()["ai_analysis"]["priority"] == "normal"
-        assert res.json()["ai_analysis"]["routing"]["skip_reason"] == "test"
+        assert res.json()["ai_analysis"] is None
+        user = sync_db.users.find_one({"email": "test@example.com"})
+        doc = sync_db.messages.find_one({"user_id": str(user["_id"])})
+        assert doc is not None
+        assert doc["ai_analysis"]["priority"] == "normal"
+        assert doc["ai_analysis"]["routing"]["skip_reason"] == "test"
         assert not hasattr(messages_mod, "analyze_message")
 
 
@@ -440,7 +446,7 @@ class TestStandaloneMessageShape:
     """US2/US3: an unlinked message keeps null identity + the Day 24 shape."""
 
     def test_unlinked_message_returns_null_identity_and_day24_analysis(
-        self, client, monkeypatch
+        self, client, sync_db, monkeypatch
     ):
         monkeypatch.setattr(
             "services.ai.analyzer.get_provider", lambda: _US3FakeProvider()
@@ -461,8 +467,14 @@ class TestStandaloneMessageShape:
         assert body["messageId"] == body["id"]
         assert body["threadId"] is None
         assert body["conversationId"] is None
+        assert body["ai_analysis"] is None
 
-        ai = body["ai_analysis"]
+        # Background analysis lands in the stored doc by the time the
+        # TestClient returns.
+        user = sync_db.users.find_one({"email": "test@example.com"})
+        doc = sync_db.messages.find_one({"user_id": str(user["_id"])})
+        assert doc is not None
+        ai = doc["ai_analysis"]
         for field in TestUS3RoutingContract.LEGACY_FIELDS:
             assert field in ai, f"missing legacy field: {field}"
         assert ai["priority"] == "important"
@@ -505,7 +517,7 @@ class TestUS3RoutingContract:
     )
 
     def test_create_message_response_retains_legacy_fields_and_routing(
-        self, client, monkeypatch
+        self, client, sync_db, monkeypatch
     ):
         monkeypatch.setattr(
             "services.ai.analyzer.get_provider", lambda: _US3FakeProvider()
@@ -521,7 +533,12 @@ class TestUS3RoutingContract:
             },
         )
         assert res.status_code == 201
-        ai = res.json()["ai_analysis"]
+        assert res.json()["ai_analysis"] is None
+
+        user = sync_db.users.find_one({"email": "test@example.com"})
+        doc = sync_db.messages.find_one({"user_id": str(user["_id"])})
+        assert doc is not None
+        ai = doc["ai_analysis"]
         for field in self.LEGACY_FIELDS:
             assert field in ai, f"missing legacy field: {field}"
         assert ai["provider"] == "groq"
@@ -542,7 +559,7 @@ class TestUS3RoutingContract:
         assert routing["decided_at"] is not None
 
     def test_create_message_identity_fields_are_additive(
-        self, client, monkeypatch
+        self, client, sync_db, monkeypatch
     ):
         """US3/SC-005: the three identity fields ride along without changing
         any pre-existing response field."""
@@ -566,7 +583,10 @@ class TestUS3RoutingContract:
         assert "threadId" in body
         assert "conversationId" in body
 
-        ai = body["ai_analysis"]
+        user = sync_db.users.find_one({"email": "test@example.com"})
+        doc = sync_db.messages.find_one({"user_id": str(user["_id"])})
+        assert doc is not None
+        ai = doc["ai_analysis"]
         for field in self.LEGACY_FIELDS:
             assert field in ai, f"missing legacy field: {field}"
         assert ai["priority"] == "important"

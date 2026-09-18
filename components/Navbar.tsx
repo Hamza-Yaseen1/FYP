@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell, LogOut, Menu } from "lucide-react";
+import { Bell, LogOut, Menu, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -28,8 +29,10 @@ interface Me {
 }
 
 export default function Navbar() {
+  const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +45,12 @@ export default function Navbar() {
       cancelled = true;
     };
   }, []);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    router.push(`/inbox?q=${encodeURIComponent(query)}`);
+    setQuery("");
+  };
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -56,7 +65,7 @@ export default function Navbar() {
   const initial = me?.name?.trim()?.charAt(0)?.toUpperCase() || "?";
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-2 border-b border-border bg-background/95 px-4 backdrop-blur-sm sm:px-6">
+    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-2 border-b border-border/60 bg-background/70 px-4 backdrop-blur-xl sm:px-6">
       {/* Mobile menu */}
       <Sheet>
         <SheetTrigger
@@ -70,6 +79,32 @@ export default function Navbar() {
           <Sidebar />
         </SheetContent>
       </Sheet>
+
+      {/* Global search → inbox */}
+      <form
+        onSubmit={handleSearch}
+        role="search"
+        className="hidden w-full max-w-xs md:block lg:max-w-sm"
+      >
+        <label className="sr-only" htmlFor="global-search">
+          Search messages
+        </label>
+        <div className="relative">
+          <Search
+            size={15}
+            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground/60"
+            aria-hidden
+          />
+          <input
+            id="global-search"
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search messages..."
+            className="h-9 w-full rounded-full border border-border/70 bg-muted/50 pr-3.5 pl-9 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/40 focus:bg-background focus:ring-2 focus:ring-primary/20"
+          />
+        </div>
+      </form>
 
       {/* Spacer for mobile */}
       <div className="flex-1" />

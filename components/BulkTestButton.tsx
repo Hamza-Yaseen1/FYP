@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, clearCache } from "@/lib/api";
 import { Loader2, Zap } from "lucide-react";
 
 interface BulkTestButtonProps {
@@ -37,6 +37,7 @@ export default function BulkTestButton({ onComplete }: BulkTestButtonProps) {
         method: "POST",
         body: JSON.stringify({ count }),
       });
+      clearCache();
 
       if (result.success) {
         setLastResult(`✓ Created ${result.created}/${result.requested} messages`);

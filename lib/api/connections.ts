@@ -5,7 +5,9 @@ export interface Connection {
   created_at: string;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
+
+import { clearCache } from "@/lib/api";
 
 export async function getConnections(): Promise<Connection[]> {
   const response = await fetch(`${API_BASE}/connections`, {
@@ -49,6 +51,7 @@ export async function createConnection(
     throw new Error(error.detail || "Failed to connect account. Please try again later.");
   }
 
+  clearCache();
   return response.json();
 }
 
@@ -71,6 +74,8 @@ export async function deleteConnection(connectionId: string): Promise<void> {
 
     throw new Error(error.detail || "Failed to disconnect account. Please try again later.");
   }
+
+  clearCache();
 }
 
 export async function getGmailAuthUrl(): Promise<string> {

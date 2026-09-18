@@ -27,7 +27,7 @@ export default function HealthBadge() {
         : "unavailable";
 
   return (
-    <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground">
+    <div className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground backdrop-blur-sm">
       <span className={`signal-lamp size-1.5 ${dot}`} aria-hidden />
       backend · {label}
     </div>

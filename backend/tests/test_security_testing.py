@@ -52,7 +52,9 @@ async def _stub_ai_with_task(content, message_id=None, user_id=None, thread_id=N
 class TestIsolationSecurityMatrix:
     @pytest.fixture(autouse=True)
     def _patch_ai(self, monkeypatch):
-        monkeypatch.setattr("routes.messages.process_message", _stub_ai)
+        # POST /messages runs analysis in the background via
+        # services.webhook_ingest._analyze_and_store, so patch the module
+        # that actually calls process_message.
         monkeypatch.setattr("services.webhook_ingest.process_message", _stub_ai)
 
     def _register(self, client, body):
@@ -177,7 +179,6 @@ class TestIsolationSecurityMatrix:
         monkeypatch.setattr(
             "services.webhook_ingest.process_message", _stub_ai_with_task
         )
-        monkeypatch.setattr("routes.messages.process_message", _stub_ai_with_task)
 
         uid_a, tok_a = self._register(client, REGISTER_A)
         self._switch(client, tok_a)

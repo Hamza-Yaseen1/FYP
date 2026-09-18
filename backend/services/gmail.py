@@ -405,10 +405,11 @@ async def poll_connected_gmail() -> None:
 
 async def _poll_one_connection(conn_doc: dict, conn_id: str, user_id: str) -> None:
     """Fetch new emails for one Gmail connection and ingest them."""
+    svc = ConnectionService(db)
+    
     access_token = await _ensure_access_token(conn_doc, conn_id, user_id)
     if access_token is None:
         logger.warning("Cannot refresh token for %s — marking error", conn_id)
-        svc = ConnectionService(db)
         await svc.set_connection_error(conn_id, user_id)
         return
 
@@ -428,21 +429,34 @@ async def _poll_one_connection(conn_doc: dict, conn_id: str, user_id: str) -> No
 
     from services.webhook_ingest import ingest_message
 
-    for mid in message_ids:
-        raw = await get_message_raw(access_token, mid)
-        if raw is None:
-            continue
-        norm = normalize_email(raw)
-        if norm is None:
-            continue
-        await ingest_message(
-            user_id=user_id,
-            source="gmail",
-            sender=norm["sender"],
-            content=norm["content"],
-            external_message_id=norm["external_message_id"],
-            subject=norm.get("subject") or None,
-        )
+    # Fetch + ingest each message concurrently, bounded so a burst of new
+    # mail cannot open a full-second wave of parallel Google calls. Errors
+    # are isolated per message and never abort the rest of the batch.
+    sem = asyncio.Semaphore(5)
+
+    async def _fetch_and_ingest(mid: str) -> None:
+        try:
+            async with sem:
+                raw = await get_message_raw(access_token, mid)
+                if raw is None:
+                    return
+                norm = normalize_email(raw)
+                if norm is None:
+                    return
+                await ingest_message(
+                    user_id=user_id,
+                    source="gmail",
+                    sender=norm["sender"],
+                    content=norm["content"],
+                    external_message_id=norm["external_message_id"],
+                    subject=norm.get("subject") or None,
+                )
+        except Exception:
+            logger.exception(
+                "Gmail fetch/ingest failed for message %s — skipping", mid
+            )
+
+    await asyncio.gather(*(_fetch_and_ingest(mid) for mid in message_ids))
 
     # Advance watermark
     now = datetime.now(timezone.utc)

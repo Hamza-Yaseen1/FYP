@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, clearCache } from "@/lib/api";
 
 export default function SimulateMessage({ onSent }: { onSent: () => void }) {
   const [sender, setSender] = useState("");
@@ -21,6 +21,7 @@ export default function SimulateMessage({ onSent }: { onSent: () => void }) {
         method: "POST",
         body: JSON.stringify({ sender: sender.trim(), message: message.trim() }),
       });
+      clearCache();
       setSender("");
       setMessage("");
       onSent();

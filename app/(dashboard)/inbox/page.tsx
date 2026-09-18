@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useRef, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
+import { GlassCard } from "@/components/GlassCard";
 import InboxTabs from "@/components/InboxTabs";
 import FilterBar from "@/components/FilterBar";
 import SearchBar from "@/components/SearchBar";
@@ -60,7 +62,18 @@ const TABS = [
   { id: "unread", label: "Unread" },
 ];
 
+const INBOX_DEBOUNCE_MS = 300;
+
 export default function InboxPage() {
+  return (
+    <Suspense fallback={null}>
+      <InboxPageInner />
+    </Suspense>
+  );
+}
+
+function InboxPageInner() {
+  const searchParams = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,9 +86,41 @@ export default function InboxPage() {
   const [selectedSender, setSelectedSender] = useState<string | null>(null);
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("q") ?? "");
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // Debounced search: the actual query sent to the API lags behind the
+  // input value by INBOX_DEBOUNCE_MS to avoid fire-hosing the backend on
+  // every keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get("q") ?? "");
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearchChange = useCallback((query: string) => {
+    setSearchQuery(query);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => setDebouncedSearch(query), INBOX_DEBOUNCE_MS);
+  }, []);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery("");
+    setDebouncedSearch("");
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+  }, []);
+
+  // Fetch counts and senders once on mount — they are independent of the
+  // active filters and must not re-fire on every keystroke.
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<FilterCounts>("/messages/counts")
+      .then((data) => { if (!cancelled) setCounts(data); })
+      .catch((err) => console.error("Failed to fetch counts:", err));
+    apiFetch<SendersResponse>("/messages/senders")
+      .then((data) => { if (!cancelled) setSenders(data.senders || []); })
+      .catch((err) => console.error("Failed to fetch senders:", err));
+    return () => { cancelled = true; };
+  }, []);
+
+  // Fetch messages whenever filters change (debounced search used here).
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -89,7 +134,7 @@ export default function InboxPage() {
         if (selectedSender) params.set("sender", selectedSender);
         if (startDate) params.set("start_date", startDate);
         if (endDate) params.set("end_date", endDate);
-        if (searchQuery) params.set("search", searchQuery);
+        if (debouncedSearch) params.set("search", debouncedSearch);
         const url = `/messages${params.toString() ? `?${params.toString()}` : ""}`;
         const data = await apiFetch<{ messages: Message[]; total: number }>(url);
         if (!cancelled) {
@@ -104,17 +149,15 @@ export default function InboxPage() {
       }
     }
     load();
-
-    apiFetch<FilterCounts>("/messages/counts")
-      .then((data) => { if (!cancelled) setCounts(data); })
-      .catch((err) => console.error("Failed to fetch counts:", err));
-
-    apiFetch<SendersResponse>("/messages/senders")
-      .then((data) => { if (!cancelled) setSenders(data.senders || []); })
-      .catch((err) => console.error("Failed to fetch senders:", err));
-
     return () => { cancelled = true; };
-  }, [activeTab, selectedSource, selectedPriority, selectedSender, startDate, endDate, searchQuery, refreshKey]);
+  }, [activeTab, selectedSource, selectedPriority, selectedSender, startDate, endDate, debouncedSearch, refreshKey]);
+
+  // Cleanup debounce timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, []);
 
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId);
@@ -140,14 +183,6 @@ export default function InboxPage() {
     setEndDate(date);
   };
 
-  const handleSearchChange = (query: string) => {
-    setSearchQuery(query);
-  };
-
-  const handleClearSearch = () => {
-    setSearchQuery("");
-  };
-
   const handleClearAllFilters = () => {
     setActiveTab("all");
     setSelectedSource(null);
@@ -156,6 +191,8 @@ export default function InboxPage() {
     setStartDate(null);
     setEndDate(null);
     setSearchQuery("");
+    setDebouncedSearch("");
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
   };
 
   const tabsWithCounts = TABS.map((tab) => ({
@@ -189,15 +226,13 @@ export default function InboxPage() {
         </div>
       </div>
 
-      <div className="mt-6">
+      <GlassCard className="mt-6 space-y-4 p-4 sm:p-5">
         <InboxTabs
           tabs={tabsWithCounts}
           activeTab={activeTab}
           onTabChange={handleTabChange}
         />
-      </div>
 
-      <div className="mt-4">
         <FilterBar
           sources={sourceOptions}
           priorities={priorityOptions}
@@ -213,16 +248,14 @@ export default function InboxPage() {
           onStartDateChange={handleStartDateChange}
           onEndDateChange={handleEndDateChange}
         />
-      </div>
 
-      <div className="mt-4">
         <SearchBar
           value={searchQuery}
           onChange={handleSearchChange}
           onClear={handleClearSearch}
           placeholder="Search messages..."
         />
-      </div>
+      </GlassCard>
 
       <div className="mt-6">
         {loading ? (
@@ -262,7 +295,7 @@ function MessageCard({ message: msg }: { message: Message }) {
   const confidence = analysis?.confidence ? Math.round(analysis.confidence * 100) : null;
 
   return (
-    <article className="rounded-xl border border-border bg-card p-4 transition-colors hover:border-muted-foreground/25">
+    <article className="pastel-border glass-card rounded-2xl p-4 shadow-sm transition-all duration-300 hover:shadow-md">
       <div className="flex items-start gap-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground">
           {msg.sender.charAt(0).toUpperCase()}

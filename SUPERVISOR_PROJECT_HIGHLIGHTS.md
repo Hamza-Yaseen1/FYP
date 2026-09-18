@@ -1,6 +1,6 @@
 # Project Highlights
 
-**Project**: Communication AI Platform ("Signal Desk")
+**Project**: Communication Overload Management ("Signal Desk")
 **Student**: Hamza Yaseen
 **Status**: Development complete through Day 25 (Agent Memory)
 **Date of this report**: September 2026

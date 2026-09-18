@@ -44,7 +44,10 @@ async def _fake_analyze(message_content, message_id=None, user_id=None, thread_i
 class TestUserIsolation:
     @pytest.fixture(autouse=True)
     def _patch_analyzer(self, monkeypatch):
-        monkeypatch.setattr("routes.messages.process_message", _fake_analyze)
+        # POST /messages runs analysis in the background via
+        # services.webhook_ingest._analyze_and_store, so the module-level
+        # process_message name must be patched there.
+        monkeypatch.setattr("services.webhook_ingest.process_message", _fake_analyze)
 
     def _register(self, client, body):
         res = client.post("/auth/register", json=body)
@@ -297,13 +300,18 @@ class TestUserIsolation:
         self._switch(client, tok_b)
         assert client.get(f"/messages/{msg_a_id}").status_code == 404
 
-    def test_message_doc_has_ai_analysis(self, client):
+    def test_message_doc_has_ai_analysis(self, client, sync_db):
         uid_a, tok_a = self._register(client, REGISTER_A)
         self._switch(client, tok_a)
         res = client.post("/messages", json=self._msg_body(TASK_CONTENT))
-        msg = res.json()
-        assert msg.get("ai_analysis") is not None
-        assert msg["ai_analysis"]["priority"] == "important"
+        assert res.status_code == 201
+        # Analysis is now stored by the background worker → the immediate
+        # response carries no ai_analysis, but the persisted doc is complete
+        # by the time the TestClient returns.
+        assert res.json().get("ai_analysis") is None
+        doc = sync_db.messages.find_one({"user_id": uid_a})
+        assert doc is not None
+        assert doc["ai_analysis"]["priority"] == "important"
 
     # ── US4: Webhook Messages Are Scoped to Owner ──────────────────
 

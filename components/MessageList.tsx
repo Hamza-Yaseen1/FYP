@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import PriorityBadge from "@/components/PriorityBadge";
 import { useTimeAgo } from "@/lib/use-time-ago";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, clearCache } from "@/lib/api";
 
 interface Message {
   id: string;
@@ -34,6 +34,15 @@ interface Message {
   created_at: string;
 }
 
+type MessagesPayload = {
+  messages: Message[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+const POLL_INTERVAL_MS = 2500;
+
 const priorityOrder: Record<string, number> = {
   urgent: 0,
   important: 1,
@@ -61,7 +70,7 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<{ messages: Message[]; total: number; limit: number; offset: number }>("/messages")
+    apiFetch<MessagesPayload>("/messages")
       .then((data) => {
         if (!cancelled) {
           setMessages(data.messages || []);
@@ -74,11 +83,31 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
     return () => { cancelled = true; };
   }, [refreshKey]);
 
+  // Poll quietly while any message is still awaiting analysis. POST /messages
+  // analyzes in the background, so un-analysed messages show up right away and
+  // resolve async. Each poll bypasses the cache so it sees fresh results.
+  useEffect(() => {
+    const hasPending = messages.some((m) => !m.ai_analysis);
+    if (!hasPending) return;
+    const interval = setInterval(async () => {
+      try {
+        const data = await apiFetch<MessagesPayload>("/messages", {
+          cache: "no-store",
+        });
+        setMessages(data.messages || []);
+      } catch {
+        // keep the current list; the next tick retries
+      }
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [messages]);
+
   const handleDelete = async () => {
     if (!deleteId) return;
     setDeleting(true);
     try {
       await apiFetch(`/messages/${deleteId}`, { method: "DELETE" });
+      clearCache();
       setMessages((prev) => prev.filter((m) => m.id !== deleteId));
     } catch {
       // Error handled silently
@@ -154,7 +183,7 @@ function MessageCard({
   const analysis = msg.ai_analysis;
 
   return (
-    <article className="rounded-xl border border-border bg-card p-4 transition-colors hover:border-muted-foreground/25">
+    <article className="pastel-border glass-card rounded-2xl p-4 shadow-sm transition-all duration-300 hover:shadow-md">
       <div className="flex items-start gap-3">
         {/* Avatar */}
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-muted-foreground">
@@ -172,6 +201,12 @@ function MessageCard({
             {msg.status === "unread" && (
               <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-primary uppercase">
                 unread
+              </span>
+            )}
+            {!analysis && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium tracking-wide text-amber-600 uppercase">
+                <Loader2 className="size-3 animate-spin" aria-hidden />
+                Analyzing…
               </span>
             )}
             {analysis?.tasks_extracted && analysis.tasks_extracted.length > 0 && (

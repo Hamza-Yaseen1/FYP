@@ -40,7 +40,7 @@ export default function SourceChart({ bySource }: SourceChartProps) {
   if (data.length === 0) return null;
 
   return (
-    <Card>
+    <Card className="pastel-border ring-0">
       <CardHeader>
         <CardTitle>Communications by source</CardTitle>
       </CardHeader>
