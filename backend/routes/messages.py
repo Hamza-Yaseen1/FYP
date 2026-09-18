@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from bson import ObjectId
 from typing import Optional
 
@@ -12,8 +12,8 @@ from models.message import (
     MessageResponse,
     message_doc_to_response,
 )
-from services.ai import process_message
 from services.threads import resolve_and_stamp
+from services.webhook_ingest import _analyze_and_store
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,9 @@ router = APIRouter(prefix="/messages", tags=["messages"])
 
 @router.post("", response_model=MessageResponse, status_code=201)
 async def create_message(
-    payload: MessageCreate, current_user: dict = Depends(get_current_user)
+    payload: MessageCreate,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
 ):
     now = datetime.now(timezone.utc)
     uid = str(current_user["_id"])
@@ -55,18 +57,11 @@ async def create_message(
         doc["conversationId"] = conversation_id
 
     result = await messages_collection.insert_one(doc)
+    message_id = str(result.inserted_id)
 
-    ai_analysis = await process_message(
-        payload.content,
-        message_id=str(result.inserted_id),
-        user_id=uid,
-        thread_id=thread_id,
+    background_tasks.add_task(
+        _analyze_and_store, payload.content, message_id, uid, thread_id
     )
-    await messages_collection.update_one(
-        {"_id": result.inserted_id},
-        {"$set": {"ai_analysis": ai_analysis}},
-    )
-    doc["ai_analysis"] = ai_analysis
 
     return message_doc_to_response(doc)
 
@@ -126,15 +121,10 @@ async def get_messages(
     if sender:
         query["sender"] = sender
 
-    # Search filter - use regex for flexible partial matching
+    # Search filter - use the MongoDB text index (sender, content, summary)
+    # instead of a collection-wide case-insensitive regex scan.
     if search:
-        # Use case-insensitive regex for better user experience
-        # This allows partial matches in sender, content, and summary
-        query["$or"] = [
-            {"sender": {"$regex": search, "$options": "i"}},
-            {"content": {"$regex": search, "$options": "i"}},
-            {"ai_analysis.summary": {"$regex": search, "$options": "i"}},
-        ]
+        query["$text"] = {"$search": search}
 
     # Get total count
     total = await messages_collection.count_documents(query)
@@ -154,41 +144,47 @@ async def get_messages(
 @router.get("/counts")
 async def get_filter_counts(current_user: dict = Depends(get_current_user)):
     uid = str(current_user["_id"])
-    base_query = {"user_id": uid}
 
-    # Get tab counts
-    all_count = await messages_collection.count_documents(base_query)
-    urgent_count = await messages_collection.count_documents({**base_query, "ai_analysis.priority": "urgent"})
-    important_count = await messages_collection.count_documents({**base_query, "ai_analysis.priority": "important"})
-    normal_count = await messages_collection.count_documents({**base_query, "ai_analysis.priority": "normal"})
-    unread_count = await messages_collection.count_documents({**base_query, "status": "unread"})
-
-    # Get source counts
-    source_pipeline = [
-        {"$match": base_query},
-        {"$group": {"_id": "$source", "count": {"$sum": 1}}},
+    # Everything the old N+1 path produced (5 count_documents + 2
+    # $group pipelines) now arrives from ONE user-scoped $facet pass.
+    pipeline = [
+        {"$match": {"user_id": uid}},
+        {"$facet": {
+            "by_priority": [
+                {"$group": {"_id": "$ai_analysis.priority", "count": {"$sum": 1}}},
+            ],
+            "by_source": [
+                {"$group": {"_id": "$source", "count": {"$sum": 1}}},
+            ],
+            "by_status": [
+                {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+            ],
+            "all": [
+                {"$count": "total"},
+            ],
+        }},
     ]
-    source_results = await messages_collection.aggregate(source_pipeline).to_list(length=100)
-    sources = {r["_id"]: r["count"] for r in source_results if r["_id"]}
+    docs = await messages_collection.aggregate(pipeline).to_list(length=1)
+    facet = docs[0] if docs else {}
 
-    # Get priority counts
-    priority_pipeline = [
-        {"$match": base_query},
-        {"$group": {"_id": "$ai_analysis.priority", "count": {"$sum": 1}}},
-    ]
-    priority_results = await messages_collection.aggregate(priority_pipeline).to_list(length=100)
-    priorities = {r["_id"]: r["count"] for r in priority_results if r["_id"]}
+    def _sum(results: list) -> dict:
+        return {r["_id"]: r["count"] for r in results if r["_id"]}
+
+    priority_counts = _sum(facet.get("by_priority") or [])
+    source_counts = _sum(facet.get("by_source") or [])
+    status_counts = _sum(facet.get("by_status") or [])
+    all_total = ((facet.get("all") or [{}])[0] or {}).get("total", 0)
 
     return {
         "tabs": {
-            "all": all_count,
-            "urgent": urgent_count,
-            "important": important_count,
-            "normal": normal_count,
-            "unread": unread_count,
+            "all": all_total,
+            "urgent": priority_counts.get("urgent", 0),
+            "important": priority_counts.get("important", 0),
+            "normal": priority_counts.get("normal", 0),
+            "unread": status_counts.get("unread", 0),
         },
-        "sources": sources,
-        "priorities": priorities,
+        "sources": source_counts,
+        "priorities": priority_counts,
     }
 
 

@@ -1,7 +1,7 @@
 # Development Journey — Communication AI Platform
 
 **Student**: Hamza Yaseen
-**Project**: Communication AI Platform ("Signal Desk")
+**Project**: Communication Overload Management ("Signal Desk")
 **Window**: August 18 – September 2, 2026 (Days 1–25)
 
 > This journey is reconstructed from the repository's git history, feature

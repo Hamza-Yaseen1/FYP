@@ -33,9 +33,9 @@ export default function Sidebar({ className, onNavigate }: SidebarProps) {
 
   return (
     <div className={cn("flex h-full flex-col", className)}>
-      {/* Brand */}
+{/* Brand */}
       <div className="flex items-center gap-3 px-5 pt-6 pb-5">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-signal to-violet-400 text-sm font-semibold text-primary-foreground shadow-md shadow-signal/25">
           S
         </span>
         <div className="leading-tight">
@@ -43,7 +43,7 @@ export default function Sidebar({ className, onNavigate }: SidebarProps) {
             Signal Desk
           </span>
           <span className="text-xs text-muted-foreground">
-            Communication triage
+            Communication overload, managed
           </span>
         </div>
       </div>
@@ -63,10 +63,10 @@ export default function Sidebar({ className, onNavigate }: SidebarProps) {
               onClick={onNavigate}
               aria-current={isActive ? "page" : undefined}
               className={cn(
-                "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  ? "bg-signal-dim/60 text-foreground ring-1 ring-signal/15"
+                  : "text-muted-foreground hover:bg-accent/70 hover:text-foreground"
               )}
             >
               <item.icon

@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Signal Desk",
+  title: "Communication Overload Management",
   description: "AI-first communication triage — read everything, surface what matters.",
 };
 

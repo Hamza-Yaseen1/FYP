@@ -6,6 +6,10 @@ vi.mock("@/lib/api", () => ({
   apiFetch: vi.fn(),
 }));
 
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}));
+
 import { apiFetch } from "@/lib/api";
 
 const mockMessages = [

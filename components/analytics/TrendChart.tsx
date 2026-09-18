@@ -31,7 +31,7 @@ export default function TrendChart({ trends }: TrendChartProps) {
   if (trends.length === 0) return null;
 
   return (
-    <Card>
+    <Card className="pastel-border ring-0">
       <CardHeader>
         <CardTitle>Attention trends</CardTitle>
       </CardHeader>

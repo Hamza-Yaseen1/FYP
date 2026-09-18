@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, clearCache } from "@/lib/api";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,6 +81,7 @@ export default function PriorityBadge({
         `/messages/${messageId}/priority?priority=${newPriority}`,
         { method: "PUT" }
       );
+      clearCache();
 
       setCurrentPriority(newPriority);
       onPriorityChange?.(newPriority);

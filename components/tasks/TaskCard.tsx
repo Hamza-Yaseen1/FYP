@@ -100,7 +100,7 @@ export default function TaskCard({
 
   return (
     <div
-      className="flex items-start gap-4 rounded-xl border border-border bg-card p-4 transition-colors hover:border-muted-foreground/25 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-background"
+      className="pastel-border glass-card flex items-start gap-4 rounded-2xl p-4 shadow-sm transition-all duration-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 focus:ring-offset-background"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       role="article"

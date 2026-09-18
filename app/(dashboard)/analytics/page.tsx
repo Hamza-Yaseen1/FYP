@@ -1,15 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { BarChart3 } from "lucide-react";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import OverviewCards from "@/components/analytics/OverviewCards";
 import PeriodToggle from "@/components/analytics/PeriodToggle";
-import PriorityChart from "@/components/analytics/PriorityChart";
-import SourceChart from "@/components/analytics/SourceChart";
-import TasksProgress from "@/components/analytics/TasksProgress";
-import TrendChart from "@/components/analytics/TrendChart";
 import { analyticsFetch, type AnalyticsPeriod, type AnalyticsResponse } from "@/lib/api/analytics";
+
+// Charts are the only consumers of recharts (~100kb+). Lazy-load them so the
+// recharts chunk ships separately and analytics stays out of the main bundle.
+const PriorityChart = dynamic(() => import("@/components/analytics/PriorityChart"), {
+  ssr: false,
+});
+const SourceChart = dynamic(() => import("@/components/analytics/SourceChart"), {
+  ssr: false,
+});
+const TasksProgress = dynamic(() => import("@/components/analytics/TasksProgress"), {
+  ssr: false,
+});
+const TrendChart = dynamic(() => import("@/components/analytics/TrendChart"), {
+  ssr: false,
+});
 
 const PERIOD_LABELS: Record<AnalyticsPeriod, string> = {
   day: "Today",

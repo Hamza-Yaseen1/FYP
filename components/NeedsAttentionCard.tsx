@@ -46,7 +46,7 @@ export default function NeedsAttentionCard({
     task?.description ?? analysis?.summary ?? message.content ?? "";
 
   return (
-    <div className="overflow-hidden rounded-xl border border-ember/20 bg-card transition-colors hover:border-ember/40">
+    <div className="pastel-border glass-card overflow-hidden rounded-2xl shadow-sm transition-all duration-300 hover:shadow-md">
       <div className="p-4">
         {/* Header */}
         <div className="flex items-center justify-between gap-2">

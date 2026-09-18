@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { Briefcase, Mail, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GlassCard } from "@/components/GlassCard";
 import { Connection, createConnection, deleteConnection, getGmailAuthUrl } from "@/lib/api/connections";
 
 interface ConnectionCardProps {
@@ -9,10 +11,19 @@ interface ConnectionCardProps {
   onConnect?: () => void;
 }
 
-const providerDots: Record<string, string> = {
-  whatsapp: "bg-emerald-500",
-  gmail: "bg-cool",
-  linkedin: "bg-dim",
+const providerTiles: Record<string, { tile: string; icon: typeof Mail }> = {
+  whatsapp: {
+    tile: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
+    icon: MessageCircle,
+  },
+  gmail: {
+    tile: "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-400",
+    icon: Mail,
+  },
+  linkedin: {
+    tile: "bg-cool-dim/70 text-cool",
+    icon: Briefcase,
+  },
 };
 
 const providerNames: Record<string, string> = {
@@ -67,14 +78,19 @@ export default function ConnectionCard({ connection, onConnect }: ConnectionCard
   };
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between">
+    <GlassCard className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-3.5">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-muted">
-          <span
-            className={`signal-lamp size-2 ${providerDots[connection.provider] ?? "bg-dim"}`}
-            aria-hidden
-          />
-        </span>
+        {(() => {
+          const tile = providerTiles[connection.provider] ?? providerTiles.linkedin;
+          const ProviderIcon = tile.icon;
+          return (
+            <span
+              className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${tile.tile}`}
+            >
+              <ProviderIcon size={20} strokeWidth={1.75} />
+            </span>
+          );
+        })()}
         <div>
           <h3 className="text-sm font-semibold">{providerNames[connection.provider]}</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -145,6 +161,6 @@ export default function ConnectionCard({ connection, onConnect }: ConnectionCard
           </Button>
         )}
       </div>
-    </div>
+    </GlassCard>
   );
 }

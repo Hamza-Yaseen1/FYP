@@ -1,7 +1,7 @@
 # Weekly Progress Reports — Communication AI Platform
 
 **Student**: Hamza Yaseen
-**Project**: Communication AI Platform ("Signal Desk")
+**Project**: Communication Overload Management ("Signal Desk")
 
 > **Important note on the timeline**: These 8 weekly reports are **reconstructed
 > from the repository's git history, feature specs, plans, and documentation**

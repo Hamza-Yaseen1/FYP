@@ -32,6 +32,11 @@ uvicorn main:app --reload
 ```
 Backend will run on: http://localhost:8000
 
+> **Same-origin API proxy:** the frontend calls `/api/*` (not `:8000` directly). `next.config.ts`
+> rewrites `/api/:path*` → `http://localhost:8000/:path*`, so cookies work across both ports
+> (host `localhost`) with no CORS. Override the backend target with `BACKEND_URL` if you run it
+> elsewhere.
+
 **Terminal 2 - Frontend:**
 ```bash
 npm run dev
@@ -124,8 +129,13 @@ After sending each message:
 
 ### AI Analysis Time:
 - Typical: 1-3 seconds per message
-- Depends on: OpenAI API response time
-- Message length doesn't significantly affect speed
+- Depends on: Groq API response time
+- `POST /messages` and webhook ingestion are non-blocking: the message is stored immediately with
+  `ai_analysis: null` and analysis completes in the background. The inbox auto-polls and re-renders
+  ("Analyzing…" badge) once analysis lands, so no manual refresh is needed.
+- Unknown/missing/pending analyses are bucketed as `pending` in analytics (kept visible, never dropped).
+- Multi-worker note: uvicorn runs the Gmail poller in every worker; duplicate fetches are
+  de-duplicated by the `{user_id, external_message_id}` index, so extra workers are safe.
 
 ### Current Limitations:
 - ✅ Priority classification works

@@ -52,7 +52,7 @@ export default function SignalLine() {
   const needYouNow = state.urgent + state.important;
 
   return (
-    <div className="flex h-9 shrink-0 items-center gap-3 overflow-x-auto border-b border-border px-4 sm:px-6">
+    <div className="flex h-9 shrink-0 items-center gap-3 overflow-x-auto border-b border-border/60 bg-muted/30 px-4 backdrop-blur-sm sm:px-6">
       {!state.ready ? (
         <span className="text-xs text-muted-foreground">Reading…</span>
       ) : (

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { GlassCard } from "@/components/GlassCard";
 import TaskList from "@/components/tasks/TaskList";
 
 export const metadata: Metadata = {
-  title: "Tasks — Communication AI",
+  title: "Tasks — Communication Overload Management",
 };
 
 export default function TasksPage() {
@@ -12,9 +13,9 @@ export default function TasksPage() {
       <p className="mt-1 text-sm text-muted-foreground">
         Pulled from your messages, sorted by priority
       </p>
-      <div className="mt-6">
+      <GlassCard className="mt-6 p-5 sm:p-6">
         <TaskList />
-      </div>
+      </GlassCard>
     </div>
   );
 }

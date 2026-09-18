@@ -38,7 +38,7 @@ export default function PriorityChart({ byPriority }: PriorityChartProps) {
   if (data.length === 0) return null;
 
   return (
-    <Card>
+    <Card className="pastel-border ring-0">
       <CardHeader>
         <CardTitle>Priority distribution</CardTitle>
       </CardHeader>

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from dotenv import load_dotenv
 import logging
 
@@ -53,6 +54,18 @@ async def lifespan(app: FastAPI):
     )
     await messages_collection.create_index(
         [("user_id", 1), ("threadId", 1), ("received_at", -1)]
+    )
+    # Counts/filter hot paths: user-scoped priority/status selects are covered
+    # by compound indexes instead of scanning every message of the user.
+    await messages_collection.create_index(
+        [("user_id", 1), ("ai_analysis.priority", 1), ("created_at", -1)]
+    )
+    await messages_collection.create_index(
+        [("user_id", 1), ("status", 1), ("created_at", -1)]
+    )
+    # Source dropdowns / source filters.
+    await messages_collection.create_index(
+        [("user_id", 1), ("source", 1), ("created_at", -1)]
     )
     await tasks_collection.create_index([("user_id", 1), ("created_at", -1)])
     await connections_collection.create_index(
@@ -128,6 +141,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Compress JSON payloads >1KB (messages lists, analytics) before they hit the
+# wire. Added after CORS so the CORS headers survive the gzip rewrite.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @app.get("/")

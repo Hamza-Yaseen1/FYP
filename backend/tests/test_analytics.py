@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 
 from services.analytics import build_analytics_response
+import services.analytics as analytics_module
 
 NOW = datetime(2026, 9, 11, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -70,8 +71,14 @@ class _FakeAnalyticsMessages:
                 return False
         return True
 
-    def find(self, flt):
-        return _FakeCursor([d for d in self.docs if self._matches(d, flt)])
+    def find(self, flt, projection=None):
+        docs = [d for d in self.docs if self._matches(d, flt)]
+        if projection is not None and isinstance(projection, dict):
+            # Only keep keys listed with value 1 (or just present in a set)
+            include = {k for k, v in projection.items() if v == 1}
+            if include:
+                docs = [{k: d[k] for k in include if k in d} for d in docs]
+        return _FakeCursor(docs)
 
     def _group_key(self, d, key_field):
         if isinstance(key_field, dict):
@@ -118,6 +125,12 @@ class _FakeAnalyticsMessages:
 
 
 def _analyze(monkeypatch, docs, tasks=None, user_id="u1", period="week"):
+    # Pin ``services.analytics.datetime.now`` to the fixture NOW so the
+    # deterministic [from, to] windows stay correct regardless of the real
+    # system clock (the seeded docs are relative to the hardcoded NOW too).
+    # Tests that already froze a different instant keep their own clock.
+    if analytics_module.datetime is not _FrozenDatetime:
+        _freeze(monkeypatch, NOW)
     fake = _FakeAnalyticsMessages(docs)
     monkeypatch.setattr(
         "services.analytics.messages_collection", _FakeAnalyticsMessages(docs)

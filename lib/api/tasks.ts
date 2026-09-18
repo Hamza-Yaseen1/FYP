@@ -13,7 +13,9 @@ export interface Task {
   is_snoozed: boolean;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
+
+import { clearCache } from "@/lib/api";
 
 export async function getTasks(): Promise<Task[]> {
   const response = await fetch(`${API_BASE}/tasks`, {
@@ -54,6 +56,7 @@ export async function completeTask(taskId: string): Promise<Task> {
     throw new Error(error.detail || "Failed to complete task. Please try again later.");
   }
 
+  clearCache();
   return response.json();
 }
 
@@ -81,6 +84,7 @@ export async function snoozeTask(taskId: string, duration: string): Promise<Task
     throw new Error(error.detail || "Failed to snooze task. Please try again later.");
   }
 
+  clearCache();
   return response.json();
 }
 
