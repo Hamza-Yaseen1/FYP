@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import ConnectionList from "@/components/connections/ConnectionList";
 import { Connection, getConnections } from "@/lib/api/connections";
 
-export default function ConnectionsPage() {
+function ConnectionsPageInner() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const searchParams = useSearchParams();
@@ -63,5 +63,13 @@ export default function ConnectionsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ConnectionsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ConnectionsPageInner />
+    </Suspense>
   );
 }

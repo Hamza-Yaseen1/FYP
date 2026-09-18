@@ -11,7 +11,7 @@ const PROTECTED_PREFIXES = [
 
 const AUTH_PAGES = ["/login", "/signup"];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasSession = Boolean(request.cookies.get("cai_token")?.value);
 

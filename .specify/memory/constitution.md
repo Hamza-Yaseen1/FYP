@@ -1,27 +1,29 @@
 <!--
 Sync Impact Report
 ==================
-Version change: 1.13.0 → 1.14.0 (MINOR: new Day 26 Gmail Integration
-section added covering purpose of Gmail connection via Google OAuth,
-security principles (OAuth only, no passwords), token handling rules,
-normalized message format for Gmail emails, connection ownership, and
-quality bar; compliance checklist expanded with 12 Gmail-specific checks)
-Modified principles: N/A (Day 26 extends existing principles — IV (User
-Control), V (Security and Privacy), VII (Progressive Enhancement) — and
-the Day 19 Connection Architecture rules without redefining them)
+Version change: 1.17.0 → 1.18.0 (MINOR: Day 29 Security + Testing — new
+section added covering the purpose of the hardening phase, core security
+principles, reliability/AI-failure rules, duplicate prevention rules,
+MUST-NOT prohibitions, and quality bar for this phase.)
+Modified principles: N/A (Day 29 continues to extend principles V
+(Security and Privacy), VII (Progressive Enhancement), and the Day 18
+User Isolation / Day 23 webhook / Day 24 Orchestrator rules without
+redefining any core principle)
 Added sections:
-  - Day 26 Gmail Integration (purpose, OAuth-only security, token handling,
-    normalized email format, connection ownership, what the system MUST
-    NOT do, quality bar)
-  - 12 new Compliance Checklist items (Gmail integration)
+  - Day 29 Security & Reliability Hardening — full section with purpose,
+    core security principles, reliability (AI failure handling), duplicate
+    prevention, MUST-NOT rules, and quality bar
+Modified sections:
+  - Governance compliance checklist — four Day 29 items added
 Removed sections: N/A
 Templates requiring updates:
   - .specify/templates/plan-template.md ✅ no changes needed
     (Constitution Check gates derive from constitution file)
   - .specify/templates/spec-template.md ✅ no changes needed
-    (requirements format neutral to Gmail rules)
+    (spec template structure unchanged)
   - .specify/templates/tasks-template.md ✅ no changes needed
-    (task structure compatible; Gmail tasks follow standard patterns)
+    (task structure compatible; security/reliability testing naturally
+    map to existing test-first task phases)
   - .specify/templates/commands/*.md ✅ N/A — no command templates exist
 Follow-up TODOs: None
 -->
@@ -1865,6 +1867,519 @@ Gmail API directly.
   identically. The new Gmail channel adds to the system without breaking
   existing channels.
 
+### Day 27 Cross-Platform Dashboard
+
+This section defines the rules for building a unified Cross-Platform
+Dashboard that groups all messages by priority, regardless of their source
+(WhatsApp, Gmail, etc.). It extends Principle I (Simplicity First),
+Principle IV (User Control), Principle VII (Progressive Enhancement), and
+the Normalized Message Format from Day 23. Day 27 delivers the central
+user-facing view that makes multi-channel communication manageable.
+
+#### Purpose of the Cross-Platform Dashboard
+
+The Cross-Platform Dashboard provides one unified view of all communications
+across all connected channels, organized by priority. Users MUST see all
+their messages in a single place, grouped by priority level (Urgent,
+Important, Normal, Low), with clear source labels showing where each message
+came from.
+
+**Success means**: A user opens the Dashboard and immediately sees all
+their communications organized by priority — WhatsApp messages, Gmail
+emails, and messages from any future channel — in one clean, scannable
+view. They can instantly identify what needs attention first, regardless
+of the source.
+
+#### Core Organization Principles
+
+1. **Priority-first organization.** The Dashboard MUST group messages by
+   priority level (🔴 URGENT, 🟡 IMPORTANT, 🟢 NORMAL, ⚪ LOW) as the
+   primary organizational structure. Priority groups are the first thing
+   users see — not source, not sender, not time. Messages whose analysis
+   is pending, skipped, or absent MUST NOT pollute these groups; they
+   render in a clearly separated "Pending analysis" tail instead.
+2. **One place for all platforms.** Messages from ALL connected channels
+   (WhatsApp, Gmail, and any future channels) MUST appear together in the
+   same Dashboard view. No separate pages per channel. The Dashboard is
+   source-agnostic — it shows messages, not platforms.
+3. **Clear source labels.** Every message card MUST display a clear source
+   label (e.g., "WhatsApp", "Gmail") so users immediately know where the
+   message came from. The label is informational, not a filter — it does
+   not change the card's position in the priority grouping.
+4. **Only current user's messages.** The Dashboard MUST show only messages
+   belonging to the authenticated user. Every database query for the
+   Dashboard filters by `user_id` as the first condition. This extends the
+   User Isolation Rules from Day 18.
+5. **Simple and clean design.** The Dashboard MUST prioritize scannability
+   and clarity. No unnecessary metadata, no complex layouts — just
+   messages organized by what matters most. Progressive Enhancement applies:
+   the Dashboard MUST load useful data even if the AI service is
+   temporarily unavailable (Principle VII).
+
+#### What Each Card Should Show
+
+Every message card in the Cross-Platform Dashboard MUST display these
+fields, in this order:
+
+```text
+🔴 URGENT
+FYP presentation deadline
+WhatsApp • Ali
+Deadline: Tonight
+```
+
+Field mapping rules:
+
+- **Priority indicator**: 🔴 for Urgent, 🟡 for Important, 🟢 for Normal,
+  ⚪ (muted styling) for Low. Derived from the stored `ai_analysis.priority`
+  — never computed in the UI.
+- **Message content or task description**: The key content from the message.
+  If tasks were extracted, show the task description (user's own words).
+  Otherwise show the AI summary, or a content preview when neither exists.
+- **Source label**: Channel name (WhatsApp, Gmail) — always visible,
+  always paired with the sender name using the format `Source • Sender`.
+- **Sender name**: Who sent the message, from stored metadata.
+- **Timestamp**: When the message was received (`receivedAt`), displayed
+  as a relative time or formatted date.
+
+Optional fields (shown when present, omitted cleanly when absent — never
+rendered as blank space, `null`, or `"undefined"`):
+
+- **Deadline**: If extracted by the AI pipeline. Preserved in original
+  wording (`Tonight`, not a computed datetime).
+- **Subject**: For Gmail emails. Displayed when present, absent for
+  WhatsApp messages.
+- **Recommended action**: If available from the AI pipeline. Single
+  verb-first sentence, ≤ 15 words.
+
+Additional card rules:
+
+- All card content comes from stored MongoDB data; the Dashboard formats,
+  it does not compute.
+- The card MUST render completely even when some optional fields are missing
+  (Progressive Enhancement applies to the final render too).
+- Missing optional fields are omitted cleanly — never rendered as blank
+  space, `null`, or `"undefined"`.
+
+#### Rules for Grouping and Ordering
+
+1. **Groups are priority-based.** Messages are grouped into four priority
+   sections in fixed order: 🔴 URGENT, 🟡 IMPORTANT, 🟢 NORMAL, ⚪ LOW.
+   Messages MUST appear in the correct group based on their AI-assigned
+   priority from stored `ai_analysis.priority`. Messages with `priority:
+   "pending"` or with missing/absent analysis MUST be rendered in a final,
+   clearly separated "Pending analysis" tail — NEVER merged into a
+   classified group, because that would inflate the group and misrepresent
+   the stored priority.
+2. **Within groups, order by recency.** Messages within each priority group
+   (and within the Pending tail) are ordered by `receivedAt` timestamp,
+   newest first. This ensures the most recent communications are always
+   most visible within each priority level.
+3. **Empty groups are hidden.** If no messages exist for a priority level,
+   that group section is not rendered — never display an empty "No urgent
+   messages" group. The Dashboard shows only groups that contain messages.
+4. **All sources mix freely.** A WhatsApp message and a Gmail email in the
+   same priority group appear side by side with equal visual weight — no
+   source-based segregation within groups. The source label identifies
+   origin; it does not determine placement.
+5. **User isolation is absolute.** Every query for the Dashboard filters by
+   the authenticated user's `user_id` as the first condition. Unfiltered
+   queries are forbidden. Cross-user message visibility is a critical
+   security failure (Day 18 User Isolation Rules).
+
+#### What the System MUST NOT Do
+
+- **NEVER show messages from other users.** The Dashboard is user-scoped.
+  Every query MUST filter by the authenticated user's `user_id`. A message
+  from another user MUST NEVER appear in the Dashboard — not partially,
+  not filtered, not in aggregate.
+- **NEVER segregate by source.** Messages from different channels MUST
+  appear together in the same priority group. Separate "WhatsApp tab" and
+  "Gmail tab" views violate the "one place for all platforms" principle.
+  Source filtering is a secondary filter on top of the unified view, not
+  a replacement for it.
+- **NEVER compute priority in the UI.** The Dashboard reads stored
+  `ai_analysis.priority` from MongoDB. It MUST NOT reclassify, re-score,
+  or override the AI pipeline's priority in the frontend.
+- **NEVER render empty group sections.** Priority groups and the Pending
+  tail with zero messages MUST NOT be displayed. Empty groups waste screen
+  space and confuse users.
+- **NEVER merge pending/unanalyzed messages into classified groups.** A
+  message whose analysis is pending, skipped, or absent MUST NOT appear as
+  URGENT, IMPORTANT, NORMAL, or LOW. It belongs only in the "Pending
+  analysis" tail, where it renders with a pending indicator.
+- **NEVER show raw timestamps without formatting.** ISO-8601 strings
+  MUST be formatted into human-readable relative time ("2 hours ago") or
+  a formatted date. Raw `2026-09-10T14:30:00Z` strings are never shown.
+- **NEVER block the Dashboard on AI availability.** Messages with pending
+  or failed AI analysis MUST still appear on the Dashboard with available
+  fields. The Dashboard reads stored data only — it MUST NOT invoke AI
+  agents or recompute analysis (Complete AI Pipeline rules).
+- **NEVER invent message content.** Card content comes from stored MongoDB
+  data only. The Dashboard MUST NOT generate, complete, or guess message
+  text, sender names, or any other field.
+- **NEVER bypass idempotence or normalization.** The Dashboard is a
+  read-only consumer. It does not write to the messages collection, does
+  not trigger re-analysis, and does not modify stored data.
+
+#### Quality Bar for Day 27
+
+- **Unified view**: All messages from all connected channels appear in one
+  Dashboard view — no separate pages per channel. Verified by sending a
+  WhatsApp message and a Gmail email and confirming both appear in the
+  same Dashboard.
+- **Priority accuracy**: Messages are grouped by their AI-assigned priority
+  level; the group matches the stored `ai_analysis.priority` value. 100%
+  match between stored priority and displayed group. Pending/skipped
+  messages appear only in the Pending tail, never in a classified group.
+- **Source visibility**: 100% of message cards display a clear source label
+  (WhatsApp, Gmail) paired with the sender name.
+- **User isolation**: Two-user isolation test passes — User A sees only
+  A's messages; User B sees only B's messages. Verified through both the
+  UI and direct API calls, including guessed object IDs.
+- **Recency ordering**: Messages within each priority group are ordered by
+  `receivedAt`, newest first. Verified by inserting messages with known
+  timestamps and confirming display order.
+- **Empty state**: When no messages exist, show a clear "No messages yet"
+  state — not broken layouts or empty group sections.
+- **Missing field handling**: Cards render completely when optional fields
+  (deadline, subject, recommendation) are absent. No blank spaces, null
+  values, or "undefined" text.
+- **Responsive design**: Dashboard works on desktop and mobile widths.
+  Priority groups stack vertically; cards remain readable at all widths.
+- **Performance**: Dashboard loads in under 2 seconds for up to 100
+  messages. No blocking on AI service availability.
+- **No regression**: WhatsApp, Gmail, and simulate messages continue to
+  work identically through the same normalized ingest path. The Dashboard
+  adds a new view without breaking existing flows.
+
+### Day 28 Analytics
+
+This section defines the rules for building a professional Analytics /
+Communication Overview section. It extends Principle I (Simplicity First),
+Principle IV (User Control), Principle V (Security and Privacy), and
+Principle VII (Progressive Enhancement). Day 28 transforms raw message data
+into meaningful insights that help users understand their communication
+patterns and make better decisions about where to focus their attention.
+
+#### Purpose of Analytics
+
+The Analytics page provides a focused, read-only view of the user's
+communication data — message volumes, priority distributions, source
+breakdowns, and task completion trends. It answers three questions every
+user has: How much am I communicating? What needs my attention? Am I
+keeping up?
+
+**Success means**: A user opens the Analytics page and immediately sees
+accurate, real-time numbers that reflect their actual communication
+patterns. The page loads fast, looks professional, and gives actionable
+insight without requiring any configuration or AI interaction.
+
+#### Core Analytics Principles
+
+1. **Data must be real, not sampled.** Every number on the Analytics page
+   MUST be computed from the authenticated user's actual stored messages
+   and tasks in MongoDB. The system MUST NOT use estimated, cached
+   (stale beyond the current session), or projected numbers. When the
+   user has 247 messages, the page shows 247 — not "approximately 250".
+2. **User isolation is absolute.** Analytics queries MUST filter by the
+   authenticated user's `user_id` as the first condition. Cross-user
+   aggregation, comparison, or combined statistics are forbidden (Day 18
+   User Isolation Rules). The system MUST NOT produce cross-user
+   benchmarks, leaderboards, or anonymized aggregate views.
+3. **Simplicity over sophistication.** Analytics MUST present clear,
+   direct numbers and straightforward charts. No complex statistical
+   models, no predictive analytics, no AI-generated insights beyond what
+   the existing pipeline already stores. The goal is clarity, not
+   analytical depth.
+4. **Clean, professional design.** The Analytics page MUST look polished
+   and intentional — consistent with the dark theme, card-based layout,
+   and visual language established across Dashboard, Inbox, Tasks, and
+   Connections. Numbers MUST be prominently displayed; charts MUST be
+   clean and readable.
+5. **Progressive Enhancement.** The Analytics page MUST load useful data
+   even if the AI service is temporarily unavailable. Charts and counters
+   that depend on stored analysis data render normally; features that
+   would require additional computation degrade gracefully (Principle VII).
+
+#### What Metrics Should Be Shown
+
+The Analytics page MUST display the following sections:
+
+**Communication Overview — Summary Cards**
+
+| Metric | Definition |
+|---|---|
+| Total Communications | Count of all messages belonging to the authenticated user (all sources, all time or filtered period) |
+| Urgent | Count of messages with `ai_analysis.priority = "urgent"` |
+| Important | Count of messages with `ai_analysis.priority = "important"` |
+| Normal | Count of messages with `ai_analysis.priority = "normal"` |
+| Low Priority | Count of messages with `ai_analysis.priority = "low"` |
+
+Rules for summary cards:
+- Counts MUST be exact integers computed from MongoDB aggregation on the
+  user's `messages` collection, filtered by `user_id`.
+- The cards MUST show the current period context (e.g., "This Week",
+  "All Time") and the user MUST be able to toggle between time periods.
+- Pending/skipped/absent analysis messages MUST be counted separately
+  and shown as "Pending" — never merged into a priority group.
+
+**Charts**
+
+| Chart | Type | Data |
+|---|---|---|
+| Communications by Source | Bar or pie chart | Message count grouped by `source` field (whatsapp, gmail, etc.) |
+| Priority Distribution | Bar or pie chart | Message count grouped by `ai_analysis.priority` (urgent, important, normal, low, pending) |
+| Task Completion | Counter or progress indicator | Count of tasks marked completed vs total tasks extracted for the user |
+| Response / Attention Trends | Line or bar chart | Message volume over time (daily or weekly buckets), optionally segmented by priority |
+
+Rules for charts:
+- Charts MUST use a lightweight charting library (e.g., recharts, Chart.js)
+  that renders client-side — no server-side image generation.
+- Chart data MUST be fetched from a dedicated analytics API endpoint that
+  performs MongoDB aggregation server-side. The frontend MUST NOT compute
+  analytics from raw message lists.
+- Charts MUST handle empty states (zero messages) gracefully — show "No
+  data yet" rather than broken or empty chart containers.
+- Charts MUST be responsive and readable on both desktop and mobile widths.
+
+#### Analytics API Contract
+
+The backend MUST expose a single analytics endpoint:
+
+```text
+GET /analytics?period=week|month|all
+```
+
+Response:
+
+```json
+{
+  "period": "week",
+  "total": 247,
+  "byPriority": {
+    "urgent": 12,
+    "important": 38,
+    "normal": 151,
+    "low": 46
+  },
+  "bySource": {
+    "whatsapp": 180,
+    "gmail": 67
+  },
+  "tasks": {
+    "total": 42,
+    "completed": 28
+  },
+  "trends": [
+    { "date": "2026-09-05", "count": 34 },
+    { "date": "2026-09-06", "count": 41 }
+  ]
+}
+```
+
+Rules:
+- The endpoint MUST require authentication (JWT cookie) — unauthenticated
+  calls return 401.
+- The `user_id` filter MUST be applied server-side as the first condition
+  in every aggregation pipeline.
+- The `period` parameter filters by `receivedAt`: `week` = last 7 days,
+  `month` = last 30 days, `all` = no time filter. Default is `week`.
+- The response MUST include only the authenticated user's data. Zero
+  cross-user aggregation.
+- The endpoint MUST respond within 500ms for up to 10,000 messages
+  (MongoDB aggregation with proper indexes).
+
+#### What the System MUST NOT Do
+
+- **NEVER show cross-user analytics.** Every query filters by
+  `user_id`. Cross-user statistics, combined views, or anonymized
+  aggregates are forbidden — even if the data appears de-identified.
+- **NEVER compute analytics in the frontend from raw message lists.**
+  The frontend MUST fetch pre-aggregated data from the analytics API
+  endpoint. Fetching all messages and computing counts client-side is
+  forbidden — it leaks data and performs poorly at scale.
+- **NEVER use estimated or cached (stale) numbers.** Analytics counts
+  MUST reflect the current state of the database. Stale cached counts
+  that do not update when messages arrive are a data accuracy violation.
+- **NEVER display analytics for other users.** A bug, misconfigured
+  query, or missing `user_id` filter that causes one user to see another
+  user's analytics is a critical security failure.
+- **NEVER store analytics results permanently.** Analytics are computed
+  on demand from stored message data. The system MUST NOT create a
+  separate analytics collection that could drift out of sync with the
+  source data.
+- **NEVER require AI to render analytics.** Charts and counters MUST
+  work from stored `ai_analysis.priority` values and message metadata.
+  If the AI service is down, previously analyzed messages still appear
+  in analytics; only newly arriving messages may show as "pending".
+- **NEVER add AI-generated narrative insights.** Analytics MUST show
+  numbers and charts — not AI-written summaries like "Your communication
+  volume increased this week." The user interprets the data; the system
+  presents it.
+
+#### Quality Bar for Day 28
+
+- **Data accuracy**: 100% — every count on the Analytics page MUST match
+  the result of a direct MongoDB count query on the user's messages with
+  the same filters. No rounding, no estimation, no stale cache.
+- **User isolation**: Two-user isolation test passes for analytics —
+  User A sees only A's communication statistics; User B sees only B's.
+  Verified by registering two users, creating messages for each, and
+  confirming their analytics pages show different numbers.
+- **Performance**: Analytics API responds within 500ms for up to 10,000
+  messages. Charts render within 1 second of data arrival.
+- **Empty state**: When a user has zero messages, the Analytics page
+  shows "No data yet" with a helpful prompt — not broken charts or zero
+  counts in misleading layouts.
+- **Time period toggle**: Switching between "This Week", "This Month",
+  and "All Time" updates all summary cards and charts instantly without
+  a full page reload.
+- **Responsive design**: Analytics page works on desktop and mobile
+  widths. Summary cards stack vertically on small screens; charts resize
+  proportionally.
+- **Chart readability**: Charts use clear labels, readable fonts, and
+  sufficient color contrast against the dark theme. No unlabeled axes,
+  no ambiguous color coding.
+- **Source breakdown accuracy**: The "Communications by Source" chart
+  MUST show accurate counts per source (whatsapp, gmail, etc.) that sum
+  to the total communications count.
+- **No regression**: Dashboard, Inbox, Tasks, and Connections continue
+  to work identically. The Analytics page is a new read-only view that
+  adds to the system without modifying existing flows.
+
+### Day 29 Security & Reliability Hardening
+
+This section defines the rules for the security-hardening and
+reliability-verification phase. It extends Principle V (Security and
+Privacy), Principle VII (Progressive Enhancement), the Day 18 User
+Isolation Rules, the Day 23 webhook security rules, and the Day 24
+Orchestrator fallback rules. Day 29 adds no new features — it proves the
+non-negotiables hold under attack and under failure.
+
+#### Purpose of Security + Testing
+
+All core features are built. Day 29 verifies critical behaviors that the
+system has relied on silently until now: isolation cannot be broken, bad
+webhook input is rejected at the door, a failing AI never loses data, and
+duplicate deliveries never multiply documents. Security and reliability
+are verified behavior, not declared intent.
+
+**Success means**: Four critical tests pass:
+
+1. **Authentication & User Isolation** — User A MUST NOT access User B's
+   messages (or tasks, analyses, connections, analytics) through the UI
+   or direct API, including guessed object IDs.
+2. **Webhook Security** — Invalid signature or malformed webhook requests
+   are rejected before parsing or storage.
+3. **AI Reliability** — When the AI is unavailable, the message is still
+   stored and retried later; zero data loss.
+4. **Duplicate Prevention** — The same message received twice produces one
+   document, keyed on `externalMessageId`.
+
+#### Core Security Principles
+
+1. **Isolation is an invariant, not a feature.** User A MUST NEVER read,
+   write, detect, or infer User B's data — at the database layer (first
+   filter `user_id`), the API layer (404 for not-yours, indistinguishable
+   from not-found), the UI layer, logs, and caches. A single broken
+   boundary is a release-blocking failure (Day 18 rules apply unchanged).
+2. **Deny by default at the boundary.** Every endpoint — especially
+   webhooks and OAuth callbacks — MUST require explicit, verifiable
+   credentials before any parsing. Requests without valid authentication
+   or signatures are rejected (401/403) and never partially processed.
+3. **Clear rejection over silent acceptance.** Invalid, ambiguous, or
+   malformed requests MUST fail loudly with an explicit status code and a
+   safe, generic error. The system MUST NOT accept a bad request "just in
+   case" and process it partially.
+4. **Fail closed.** On any verification failure (missing signature, expired
+   token, malformed payload) the outcome is rejection or a retry-safe
+   acknowledgement — never degraded, read-only, or half-written state.
+5. **Secrets stay server-side.** Signing secrets, API keys, and verify
+   tokens live in environment variables only; they are never returned to
+   clients or written to logs, responses, or the database in plaintext
+   (Days 19, 22, 23, 26 rules extend).
+
+#### Reliability Principles (AI Failure Handling)
+
+1. **Store first, analyze later.** Ingestion MUST persist the message to
+   MongoDB with its server-set `user_id` and identity fields BEFORE any AI
+   work. An AI outage MUST NOT lose a message.
+2. **AI failure softens, never erases.** When analysis fails or the
+   provider is unavailable, the message MUST be stored with
+   `ai_analysis` in a pending state (or its documented fallback), MUST
+   remain visible on the dashboard, and MUST be retried later. Zero data
+   loss is the bar.
+3. **Never block ingestion on AI.** The webhook/ingest path MUST respond
+   200 once the message is validated and stored; analysis runs
+   asynchronously (Day 23/24 rules). A slow or downed AI service never
+   delays or drops ingestion.
+4. **Retries are idempotent.** Background retry of a pending analysis MUST
+   update the same stored document — never insert a second copy (see
+   Duplicate Prevention below).
+5. **Degradation is observable.** Pending/retry state MUST be visible to
+   the user (e.g., a "pending analysis" tail on the dashboard) and in the
+   stored document, so a silent failure never masquerades as success.
+
+#### Duplicate Prevention Rules
+
+1. **`externalMessageId` is the idempotence key.** Every provider message
+   (WhatsApp `wamid`, Gmail message id, simulate payload id) MUST have its
+   unique identifier persisted at ingest, set server-side.
+2. **Dedupe before insert.** The ingest path MUST check for an existing
+   document with the same `externalMessageId` (user-scoped) before writing.
+   On match, the delivery is acknowledged (200 for webhooks) and skipped —
+   no duplicate document, no re-analysis.
+3. **Dedupe covers every reprocessing path.** Meta redeliveries, Gmail
+   polling overlaps, AI-failure retries, and user-triggered re-analysis
+   MUST all converge on the same stored document — never a new one.
+4. **The database is the final authority.** A unique index on the
+   user-scoped dedupe key (e.g., `{user_id, externalMessageId}`) MUST back
+   the application check so a race can never insert a duplicate.
+5. **Key-less messages get a deterministic key.** Messages without a
+   provider ID (simulate, legacy data) MUST derive a deterministic identity
+   server-side (e.g., hash of `user_id` + `source` + `sender` + `content` +
+   `receivedAt`) or be explicitly exempted — never silently duplicated.
+
+#### What MUST NOT Happen
+
+- **NEVER leak across users.** Any code path that lets User A read, guess,
+  or enumerate User B's data — including via guessed object IDs, error
+  messages, logs, or timing differences — is a release-blocking breach.
+- **NEVER process an unverified webhook.** Requests with invalid or missing
+  signatures, or malformed payloads, are rejected before parsing or
+  storage; partial processing is forbidden.
+- **NEVER lose a message to AI failure.** An AI timeout, 429, provider
+  outage, or malformed model output MUST NOT drop a message; pending state
+  plus retry is the only acceptable outcome.
+- **NEVER insert a duplicate.** A repeated delivery, AI-failure retry, or
+  polling overlap MUST produce zero new documents.
+- **NEVER block ingestion on AI.** The request path never waits on or fails
+  because of the AI service.
+- **NEVER degrade silently.** Rejections, pending analysis, and retries
+  MUST be explicit in responses and stored state — quiet acceptance and
+  quiet drops are failures.
+
+#### Quality Bar for Day 29
+
+- **Isolation test**: The two-user A/B test passes for messages, tasks,
+  connections, and analytics — via UI and direct API, including guessed
+  object IDs. A sees zero of B's data; 404 responses are indistinguishable
+  from "not found" (Day 18 bar).
+- **Webhook rejection**: Requests with invalid signature, missing
+  signature, or malformed body are rejected (403/400) before any
+  processing — verified with a suite of negative payloads.
+- **AI-outage recovery**: With the AI provider mocked to fail (timeout /
+  429 / hard error), a message is still stored with pending state, remains
+  visible on the dashboard, and is completed (document updated, no
+  duplicate) when the provider is restored.
+- **Duplicate idempotence**: Delivering the same `externalMessageId` twice
+  (webhook redelivery, poll overlap, retry) yields exactly one document —
+  verified at the application layer and backed by the unique index.
+- **No regression**: The full backend suite (`backend/tests/`) and the
+  frontend vitest suite stay green; Dashboard, Inbox, Tasks, Connections,
+  and Analytics continue to work identically.
+
 ### Auth Pages UI/UX Principles
 
 Both `/login` and `/signup` share one visual system built on Tailwind CSS +
@@ -2134,5 +2649,20 @@ Before merging any feature branch, verify:
 - [ ] Requesting another user's Gmail connection by ID returns 404 identical to non-existent resource
 - [ ] Gmail disconnect revokes the token with Google and deletes all stored tokens from the database
 - [ ] Gmail emails appear in the Inbox alongside WhatsApp messages, filterable by source and priority
+- [ ] Cross-Platform Dashboard groups messages by priority (🔴 URGENT, 🟡 IMPORTANT, 🟢 NORMAL, ⚪ LOW) as the primary organizational structure; pending/unanalyzed messages render only in a separated "Pending analysis" tail
+- [ ] Messages from all connected channels (WhatsApp, Gmail) appear together in the same Dashboard view — no separate pages per channel
+- [ ] Every message card displays a clear source label (WhatsApp, Gmail) paired with the sender name
+- [ ] Dashboard shows only messages belonging to the authenticated user (user isolation); every query filters by `user_id` as first condition
+- [ ] Messages within each priority group are ordered by `receivedAt` timestamp, newest first
+- [ ] Empty priority groups are hidden — never displayed as empty sections
+- [ ] Dashboard renders from stored MongoDB data only; it does NOT invoke AI agents or recompute analysis
+- [ ] Analytics queries filter by authenticated user's `user_id` as first condition (user isolation)
+- [ ] Analytics counts are exact — computed from MongoDB aggregation on user's messages, not estimated or cached
+- [ ] Cross-user analytics aggregation is forbidden — every metric is scoped to the authenticated user only
+- [ ] Analytics endpoint requires authentication; unauthenticated calls return 401
+- [ ] Two-user isolation A/B test passes for messages, tasks, connections, and analytics (guessed IDs included) — User A never sees User B's data
+- [ ] Invalid or missing webhook signatures and malformed payloads are rejected before any parsing or storage
+- [ ] AI outage/failure stores the message with pending state, keeps it visible, and retries later — zero message loss
+- [ ] Duplicate `externalMessageId` deliveries produce zero duplicate documents (user-scoped check backed by a unique index)
 
-**Version**: 1.14.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-09-10
+**Version**: 1.18.0 | **Ratified**: 2026-08-19 | **Last Amended**: 2026-09-11
