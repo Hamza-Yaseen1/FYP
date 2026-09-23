@@ -381,3 +381,346 @@ class TestPollerIngest:
         )
         doc = fake.docs[0]
         assert "subject" not in doc
+
+
+# ──────────────────────────────────────────────────────────────
+# Fetch-coverage: pagination + full first scan + found/saved stats
+# ──────────────────────────────────────────────────────────────
+
+
+class _FakeGmailMessages:
+    """Messages store with count_documents for poller fetch-coverage tests."""
+
+    def __init__(self, docs=None):
+        self.docs = list(docs or [])
+
+    def _matches(self, doc, flt):
+        for k, v in flt.items():
+            if isinstance(v, dict) and "$in" in v:
+                if doc.get(k) not in v["$in"]:
+                    return False
+            else:
+                if doc.get(k) != v:
+                    return False
+        return True
+
+    async def insert_one(self, doc):
+        # Mirror the real unique {user_id, external_message_id} index so the
+        # duplicate path (return existing id) is exercised like production.
+        existing = [
+            d for d in self.docs
+            if d.get("user_id") == doc.get("user_id")
+            and doc.get("external_message_id")
+            and d.get("external_message_id") == doc.get("external_message_id")
+        ]
+        if existing:
+            raise DuplicateKeyError("dup", 11000)
+        self.docs.append(doc)
+        return _FakeInsertResult(doc["_id"])
+
+    async def find_one(self, flt):
+        for d in self.docs:
+            if self._matches(d, flt):
+                return d
+        return None
+
+    async def update_one(self, flt, update):
+        return None
+
+    async def count_documents(self, flt):
+        return sum(1 for d in self.docs if self._matches(d, flt))
+
+
+class _FakeGmailConnections:
+    def __init__(self, docs=None):
+        self.docs = list(docs or [])
+
+    async def find_one(self, flt):
+        for d in self.docs:
+            if all(d.get(k) == v for k, v in flt.items()):
+                return d
+        return None
+
+    async def update_one(self, flt, update):
+        for d in self.docs:
+            if all(d.get(k) == v for k, v in flt.items()):
+                for k, v in update.get("$set", {}).items():
+                    d[k] = v
+        return None
+
+
+class _FakeGmailDb:
+    def __init__(self, messages, connections):
+        self._messages = messages
+        self._connections = connections
+
+    def __getitem__(self, name):
+        if name == "messages":
+            return self._messages
+        if name == "connections":
+            return self._connections
+        raise KeyError(name)
+
+
+class TestPollerFetchCoverage:
+    """Verify the poller pulls ALL inbox emails — pagination, no narrow
+    ``after:`` filter on the first scan, and found-vs-saved accounting."""
+
+    USER_ID = "507f1f77bcf86cd799439011"
+
+    def _build_conn(self):
+        conn = {
+            "_id": ObjectId(),
+            "user_id": self.USER_ID,
+            "provider": "gmail",
+            "status": "connected",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        return conn
+
+    def _patch_poll_deps(self, monkeypatch, message_ids=None, conn=None, seed_ids=None):
+        """Fake out google + motor so the poller runs under asyncio.run."""
+        import services.gmail as gmail_mod
+        import services.webhook_ingest as webhook_ingest_mod
+
+        captured = {}
+
+        async def _token(*a, **k):
+            return "fresh-token"
+
+        async def _list(access_token, after_epoch=None, **k):
+            captured["after_epoch"] = after_epoch
+            return list(message_ids or [])
+
+        async def _raw(token, mid):
+            return {"id": mid, "payload": {"raw": ""}}
+
+        def _norm(raw):
+            return {
+                "sender": "testsender@example.com",
+                "content": f"body {raw['id']}",
+                "subject": f"subj {raw['id']}",
+                "external_message_id": raw["id"],
+            }
+
+        async def _noop_process(*a, **k):
+            return {"priority": "normal", "provider": "test"}
+
+        async def _noop_resolve(*a, **k):
+            return None, None
+
+        messages = _FakeGmailMessages()
+        for sid in seed_ids or []:
+            messages.docs.append({
+                "_id": ObjectId(),
+                "user_id": self.USER_ID,
+                "source": "gmail",
+                "external_message_id": sid,
+                "status": "unread",
+            })
+        connections = _FakeGmailConnections([conn] if conn else [])
+
+        monkeypatch.setattr(gmail_mod, "db", _FakeGmailDb(messages, connections))
+        monkeypatch.setattr(gmail_mod, "_ensure_access_token", _token)
+        monkeypatch.setattr(gmail_mod, "list_new_message_ids", _list)
+        monkeypatch.setattr(gmail_mod, "get_message_raw", _raw)
+        monkeypatch.setattr(gmail_mod, "normalize_email", _norm)
+        monkeypatch.setattr(webhook_ingest_mod, "messages_collection", messages)
+        monkeypatch.setattr(webhook_ingest_mod, "process_message", _noop_process)
+        monkeypatch.setattr(webhook_ingest_mod, "resolve_and_stamp", _noop_resolve)
+        return captured, messages
+
+    def test_first_poll_is_full_inbox_scan_and_saves_all(self, monkeypatch):
+        """No `after:` filter on first poll → older test emails are eligible."""
+        from services.gmail import _poll_one_connection
+
+        conn = self._build_conn()
+        captured, messages = self._patch_poll_deps(
+            monkeypatch, message_ids=["m1", "m2"], conn=conn
+        )
+
+        summary = asyncio.run(
+            _poll_one_connection(conn, str(conn["_id"]), self.USER_ID)
+        )
+
+        assert captured["after_epoch"] is None
+        assert summary == {
+            "found": 2,
+            "fetched": 2,
+            "saved": 2,
+            "duplicates": 0,
+            "failed": 0,
+        }
+        assert len(messages.docs) == 2
+        assert {d["external_message_id"] for d in messages.docs} == {"m1", "m2"}
+        # Watermark advanced so the next poll is a cheap incremental scan.
+        assert "last_fetched_at" in conn
+
+    def test_poll_counts_and_skips_existing_duplicates(self, monkeypatch):
+        """Already-stored emails are counted as duplicates, not double-saved."""
+        from services.gmail import _poll_one_connection
+
+        conn = self._build_conn()
+        _, messages = self._patch_poll_deps(
+            monkeypatch, message_ids=["m1", "m2"], conn=conn, seed_ids=["m1"]
+        )
+
+        summary = asyncio.run(
+            _poll_one_connection(conn, str(conn["_id"]), self.USER_ID)
+        )
+
+        assert summary["found"] == 2
+        assert summary["duplicates"] == 1
+        assert summary["saved"] == 1
+        assert summary["failed"] == 0
+        assert len(messages.docs) == 2  # m1 + newly saved m2
+
+    def test_incremental_poll_uses_after_watermark(self, monkeypatch):
+        """Later polls narrow with `after:<epoch>` — no full re-scan."""
+        from services.gmail import _poll_one_connection
+
+        conn = self._build_conn()
+        conn["last_fetched_at"] = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        captured, _ = self._patch_poll_deps(
+            monkeypatch, message_ids=["m1"], conn=conn
+        )
+
+        asyncio.run(_poll_one_connection(conn, str(conn["_id"]), self.USER_ID))
+
+        assert captured["after_epoch"] == int(
+            datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp()
+        )
+
+    def test_list_message_ids_paginates_until_exhausted(self, monkeypatch):
+        """nextPageToken is followed so a poll never truncates at one page."""
+        import json
+
+        import services.gmail as gmail_mod
+
+        pages = [
+            {"messages": [{"id": "p1a"}, {"id": "p1b"}], "nextPageToken": "tok2"},
+            {"messages": [{"id": "p2a"}], "nextPageToken": "tok3"},
+            {"messages": [{"id": "p3a"}], "nextPageToken": None},
+        ]
+        calls = []
+
+        class _Resp:
+            def __init__(self, status_code, body):
+                self.status_code = status_code
+                self.text = json.dumps(body)
+                self._body = body
+
+            def json(self):
+                return self._body
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def get(self, url, headers=None, params=None):
+                calls.append(params)
+                return _Resp(200, pages[len(calls) - 1])
+
+        monkeypatch.setattr(gmail_mod.httpx, "AsyncClient", lambda: _FakeClient())
+
+        ids = asyncio.run(
+            gmail_mod.list_new_message_ids(
+                "tk", after_epoch=1234567890, max_results=100, max_pages=10
+            )
+        )
+
+        assert ids == ["p1a", "p1b", "p2a", "p3a"]
+        assert len(calls) == 3
+        assert calls[0]["q"] == "in:inbox after:1234567890"
+        assert "pageToken" not in calls[0]
+        assert calls[1]["pageToken"] == "tok2"
+        assert calls[2]["pageToken"] == "tok3"
+
+    def test_list_message_ids_full_scan_omits_after_filter(self, monkeypatch):
+        """Full-scan query is just `in:inbox` — older emails are included."""
+        import json
+
+        import services.gmail as gmail_mod
+
+        calls = []
+
+        class _Resp:
+            def __init__(self, body):
+                self.status_code = 200
+                self.text = "ok"
+                self._body = body
+
+            def json(self):
+                return self._body
+
+        class _FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def get(self, url, headers=None, params=None):
+                calls.append(params)
+                return _Resp({"messages": [{"id": "z1"}]})
+
+        monkeypatch.setattr(gmail_mod.httpx, "AsyncClient", lambda: _FakeClient())
+
+        asyncio.run(gmail_mod.list_new_message_ids("tk", after_epoch=None))
+
+        assert calls[0]["q"] == "in:inbox"
+        assert "after" not in calls[0]["q"]
+
+
+class TestManualRefreshEndpoint:
+    """POST /connections/gmail/refresh — forces a full scan on demand."""
+
+    def _register(self, client, email="refresh@test.com"):
+        res = client.post(
+            "/auth/register",
+            json={"name": "Refresh Tester", "email": email, "password": "password123"},
+        )
+        assert res.status_code == 201
+        return res.json()["id"]
+
+    def test_no_connected_gmail_returns_404(self, client):
+        self._register(client)
+        resp = client.post("/connections/gmail/refresh")
+        assert resp.status_code == 404
+
+    def test_refresh_runs_full_poll_and_reports_stats(self, client, sync_db, monkeypatch):
+        user_id = self._register(client)
+        conn_id = ObjectId()
+        sync_db.connections.insert_one({
+            "_id": conn_id,
+            "user_id": user_id,
+            "provider": "gmail",
+            "status": "connected",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        })
+
+        called = {}
+
+        async def fake_poll(conn_doc, conn_id_, user_id_, force_full_scan=False):
+            called["force_full_scan"] = force_full_scan
+            return {"found": 3, "fetched": 3, "saved": 3, "duplicates": 0, "failed": 0}
+
+        monkeypatch.setattr("routes.gmail._poll_one_connection", fake_poll)
+
+        resp = client.post("/connections/gmail/refresh")
+        assert resp.status_code == 200
+        assert called["force_full_scan"] is True
+        body = resp.json()
+        assert body["connection_id"] == str(conn_id)
+        assert body["found"] == 3
+        assert body["saved"] == 3
+        assert body["duplicates"] == 0
+
+    def test_refresh_requires_auth(self, client):
+        resp = client.post("/connections/gmail/refresh")
+        assert resp.status_code == 401

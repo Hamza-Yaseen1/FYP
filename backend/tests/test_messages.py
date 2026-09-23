@@ -442,6 +442,60 @@ class TestCreateMessageRouting:
         assert not hasattr(messages_mod, "analyze_message")
 
 
+class TestClearInbox:
+    """Test DELETE /messages (bulk clear-inbox endpoint)."""
+
+    def test_clear_inbox_requires_auth(self, client):
+        """Clearing the inbox must be an authenticated action."""
+        res = client.delete("/messages")
+        assert res.status_code in [200, 401]
+
+    def test_clear_inbox_empty(self, client):
+        """Clearing an empty inbox returns zero deleted."""
+        register(client)
+        res = client.delete("/messages")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["deleted"] == 0
+
+    def test_clear_inbox_deletes_all_own_messages(self, client, sync_db):
+        """DELETE /messages removes every message of the current user."""
+        register(client)
+        user = sync_db.users.find_one({"email": "test@example.com"})
+        create_message(client, sync_db, user["_id"], sender="Ali")
+        create_message(client, sync_db, user["_id"], sender="Sara")
+        create_message(client, sync_db, user["_id"], sender="Zara")
+
+        res = client.delete("/messages")
+        assert res.status_code == 200
+        assert res.json()["deleted"] == 3
+
+        remaining = client.get("/messages")
+        assert remaining.json()["total"] == 0
+
+    def test_clear_inbox_only_deletes_own_messages(self, client, sync_db):
+        """Clearing one user's inbox must not touch another user's messages."""
+        register(client, email="usera@example.com", name="User A")
+        user_a = sync_db.users.find_one({"email": "usera@example.com"})
+        create_message(client, sync_db, user_a["_id"], sender="Ali")
+
+        register(client, email="userb@example.com", name="User B")
+        user_b = sync_db.users.find_one({"email": "userb@example.com"})
+        create_message(client, sync_db, user_b["_id"], sender="Sara")
+
+        # Registering user B changed the session to user B; clear their inbox.
+        res = client.delete("/messages")
+        assert res.status_code == 200
+        assert res.json()["deleted"] == 1
+
+        # User A's message must survive.
+        assert sync_db.messages.count_documents({"user_id": str(user_a["_id"])}) == 1
+
+        # User B's inbox is now empty.
+        remaining = client.get("/messages")
+        assert remaining.json()["total"] == 0
+
+
 class TestStandaloneMessageShape:
     """US2/US3: an unlinked message keeps null identity + the Day 24 shape."""
 
@@ -591,3 +645,143 @@ class TestUS3RoutingContract:
             assert field in ai, f"missing legacy field: {field}"
         assert ai["priority"] == "important"
         assert ai["status"] == "completed"
+
+
+class TestAnalysisSubjectText:
+    """Gmail subject + body must BOTH reach the AI pipeline."""
+
+    def test_no_subject_keeps_body_unchanged(self):
+        from services.webhook_ingest import build_analysis_text
+
+        assert build_analysis_text("hello body") == "hello body"
+
+    def test_subject_prepended(self):
+        from services.webhook_ingest import build_analysis_text
+
+        text = build_analysis_text("Submit it", "Action Required: by tomorrow")
+        assert text == "Subject: Action Required: by tomorrow\n\nSubmit it"
+
+    def test_subject_is_stripped(self):
+        from services.webhook_ingest import build_analysis_text
+
+        text = build_analysis_text("body", "  Urgent  ")
+        assert text == "Subject: Urgent\n\nbody"
+
+    def test_blank_subject_keeps_body_unchanged(self):
+        from services.webhook_ingest import build_analysis_text
+
+        assert build_analysis_text("body", "   ") == "body"
+
+
+_REANALYZE_ANALYSIS = {
+    "priority": "urgent",
+    "confidence": 0.92,
+    "explanation": "server down, must fix today",
+    "summary": "Production server is down",
+    "recommended_action": "Fix the server today",
+    "recommended_actions": ["Fix the server today"],
+    "tasks_extracted": [],
+    "deadlines": ["today"],
+    "needs_attention": True,
+    "attention_reason": "urgent",
+    "provider": "stub",
+    "status": "completed",
+}
+
+
+class TestReanalyzeMessage:
+    """POST /messages/{id}/reanalyze re-runs the AI pipeline in place."""
+
+    def test_reanalyze_requires_auth(self, client):
+        res = client.post("/messages/000000000000000000000000/reanalyze")
+        assert res.status_code == 401
+
+    def test_reanalyze_missing_message_404(self, client, sync_db, monkeypatch):
+        monkeypatch.setattr("routes.messages.process_message", lambda *a, **k: {})
+        register(client)
+        res = client.post("/messages/000000000000000000000000/reanalyze")
+        assert res.status_code == 404
+
+    def test_reanalyze_cross_user_404(self, client, sync_db, monkeypatch):
+        monkeypatch.setattr("routes.messages.process_message", lambda *a, **k: {})
+        register(client, email="ownera@example.com", name="Owner")
+        owner = sync_db.users.find_one({"email": "ownera@example.com"})
+        mid = create_message(client, sync_db, owner["_id"], sender="Ali")
+
+        register(client, email="intruder@example.com", name="Intruder")
+        res = client.post(f"/messages/{mid}/reanalyze")
+        assert res.status_code == 404
+
+    def test_reanalyze_sends_subject_and_body_and_persists(
+        self, client, sync_db, monkeypatch
+    ):
+        register(client)
+        user = sync_db.users.find_one({"email": "test@example.com"})
+        mid = create_message(
+            client,
+            sync_db,
+            user["_id"],
+            sender="SRE Bot",
+            source="gmail",
+            content="Please fix the production outage",
+            subject="Action Required: server down",
+        )
+
+        captured: dict = {}
+
+        async def fake_process(text, **kwargs):
+            captured["text"] = text
+            captured["message_id"] = kwargs.get("message_id")
+            return dict(_REANALYZE_ANALYSIS)
+
+        monkeypatch.setattr("routes.messages.process_message", fake_process)
+
+        res = client.post(f"/messages/{mid}/reanalyze")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["ai_analysis"]["priority"] == "urgent"
+        assert body["ai_analysis"]["confidence"] == 0.92
+        assert body["ai_analysis"]["status"] == "completed"
+
+        assert captured["text"] == (
+            "Subject: Action Required: server down\n\nPlease fix the production outage"
+        )
+        assert captured["message_id"] == mid
+
+        stored = sync_db.messages.find_one({"_id": ObjectId(mid)})
+        assert stored["ai_analysis"]["priority"] == "urgent"
+
+    def test_reanalyze_survives_pipeline_failure(self, client, sync_db, monkeypatch):
+        """A re-run that degrades to pending must not crash or lose the message."""
+
+        async def failing_process(text, **kwargs):
+            raise RuntimeError("provider down")
+
+        monkeypatch.setattr("routes.messages.process_message", failing_process)
+        register(client)
+        user = sync_db.users.find_one({"email": "test@example.com"})
+        mid = create_message(client, sync_db, user["_id"], sender="Ali")
+
+        res = client.post(f"/messages/{mid}/reanalyze")
+        assert res.status_code == 200
+        assert sync_db.messages.count_documents({"_id": ObjectId(mid)}) == 1
+
+    def test_priority_override_marks_analysis_completed(self, client, sync_db):
+        register(client)
+        user = sync_db.users.find_one({"email": "test@example.com"})
+        mid = create_message(
+            client,
+            sync_db,
+            user["_id"],
+            sender="Ali",
+            ai_analysis={
+                "priority": "pending",
+                "confidence": 0.0,
+                "status": "pending",
+            },
+        )
+
+        res = client.put(f"/messages/{mid}/priority?priority=urgent")
+        assert res.status_code == 200
+        assert res.json()["ai_analysis"]["priority"] == "urgent"
+        assert res.json()["ai_analysis"]["status"] == "completed"

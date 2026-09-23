@@ -15,6 +15,7 @@ interface PriorityBadgeProps {
   priority: string;
   confidence?: number;
   explanation?: string;
+  status?: string;
   onPriorityChange?: (newPriority: string) => void;
 }
 
@@ -40,8 +41,8 @@ const priorityConfig: Record<string, { color: string; lamp: string; label: strin
     label: "Low",
   },
   pending: {
-    color: "border-border bg-muted text-muted-foreground",
-    lamp: "bg-dim",
+    color: "border-amber-500/30 bg-amber-500/10 text-amber-600",
+    lamp: "bg-amber-500",
     label: "Pending",
   },
 };
@@ -62,15 +63,33 @@ export default function PriorityBadge({
   priority,
   confidence,
   explanation,
+  status,
   onPriorityChange,
 }: PriorityBadgeProps) {
   const [currentPriority, setCurrentPriority] = useState(priority);
+
+  // Sync local state with the server's classification. Without this, a
+  // message whose analysis went pending -> completed (re-analysis, retry
+  // sweep, override) would keep showing the STALE badge because useState
+  // only reads the prop on first render. This is the render-time adjustment
+  // pattern (React docs) — deliberately NOT an effect, so it never fights
+  // the optimistic-update state set by handlePriorityChange.
+  const [prevPriorityProp, setPrevPriorityProp] = useState(priority);
+  if (prevPriorityProp !== priority) {
+    setPrevPriorityProp(priority);
+    setCurrentPriority(priority);
+  }
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const config = priorityConfig[currentPriority] || priorityConfig.pending;
-  const showReviewFlag = confidence !== undefined && confidence < 0.5;
+  // A failed/degraded analysis stores status="pending" with confidence 0.0.
+  // Don't present that stub as a real "Normal 0%" classification — show it
+  // as Pending instead (it is retried automatically by the backend sweep).
+  const isPending = status === "pending";
+  const config = priorityConfig[isPending ? "pending" : currentPriority] || priorityConfig.pending;
+  const showReviewFlag =
+    !isPending && confidence !== undefined && confidence < 0.5;
   const showReviewRecommended =
-    confidence !== undefined && confidence >= 0.5 && confidence < 0.8;
+    !isPending && confidence !== undefined && confidence >= 0.5 && confidence < 0.8;
 
   const handlePriorityChange = async (newPriority: string) => {
     if (newPriority === currentPriority) return;
@@ -93,8 +112,10 @@ export default function PriorityBadge({
   };
 
   const tooltipContent = [
-    explanation && `Reason: ${explanation}`,
-    confidence !== undefined && `Confidence: ${Math.round(confidence * 100)}%`,
+    isPending
+      ? "AI analysis failed or is pending — it will be retried automatically"
+      : explanation && `Reason: ${explanation}`,
+    !isPending && confidence !== undefined && `Confidence: ${Math.round(confidence * 100)}%`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -124,7 +145,7 @@ export default function PriorityBadge({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      {confidence !== undefined && (
+      {!isPending && confidence !== undefined && (
         <span
           className={`font-mono text-[10px] ${getConfidenceColor(confidence)}`}
           title={tooltipContent || undefined}

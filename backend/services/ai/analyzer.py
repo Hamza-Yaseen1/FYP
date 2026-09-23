@@ -115,8 +115,23 @@ async def analyze_message(
                         "created_at": datetime.now(timezone.utc),
                     })
                 if task_docs:
-                    await tasks_collection.insert_many(task_docs)
-                    logger.info("Stored %d tasks for message %s", len(task_docs), message_id)
+                    try:
+                        await tasks_collection.insert_many(task_docs)
+                        logger.info(
+                            "Stored %d tasks for message %s",
+                            len(task_docs),
+                            message_id,
+                        )
+                    except Exception:
+                        # Task storage is a side effect of a SUCCESSFUL analysis.
+                        # A DB hiccup here must never demote a completed analysis
+                        # to the "pending" stub — the message stays analyzed and
+                        # the failure is only logged.
+                        logger.warning(
+                            "Task persistence failed for message %s; analysis kept",
+                            message_id,
+                            exc_info=True,
+                        )
 
         return analysis
     except Exception as e:

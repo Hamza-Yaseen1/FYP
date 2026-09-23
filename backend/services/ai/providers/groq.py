@@ -30,20 +30,27 @@ ANALYSIS_PROMPT = """You are a communication analysis engine. Analyze the messag
 PRIORITY LEVELS:
 
 URGENT - Requires immediate attention within hours.
-Evidence needed:
+Evidence needed (ANY ONE is enough):
 - Explicit time pressure: "right now", "immediately", "ASAP", "urgent"
 - OR deadline within 24 hours ("tonight", "today", "right now")
-- AND clear consequence of delay
+- OR an active outage/disruption: "server down", "production down", "service down",
+  "site down", "outage", "is down", "not working", "blocking", "blocked"
+- OR "action required" / "action needed" combined with a same-day deadline
 
 IMPORTANT - Requires attention within 1-3 days.
-Evidence needed:
+Evidence needed (ANY ONE is enough):
 - Deadline within 1-7 days ("tomorrow", "this week", "by Friday")
 - OR action required with some consequence of delay
+- OR a meeting/event the recipient must attend, prepare for, or act on —
+  even when scheduled a week away ("meeting rescheduled to next week")
+- OR "action required" without a same-day deadline
 
 NORMAL - Requires attention but not time-sensitive.
 This is the DEFAULT when evidence is ambiguous.
 - No explicit deadline
-- OR deadline more than 7 days away ("next week", "next month")
+- OR purely informational update that needs no action (e.g. an FYI or a
+  reschedule notice the recipient need not prepare for) — this is NOT implied
+  by "next week" alone when the message asks something of the recipient
 - OR action requested but not time-critical
 
 LOW - Minimal or no immediate action needed.
@@ -74,10 +81,12 @@ CRITICAL TASK RULES:
 
 DEADLINE DETECTION:
 - "right now", "ASAP", "immediately" -> deadline: the expression itself, priority: urgent
+- "server down", "production down", "outage", "blocking" -> deadline: the expression itself, priority: urgent
 - "today", "tonight" -> deadline: the expression itself, priority: urgent
 - "tomorrow" -> deadline: "tomorrow", priority: important
 - "this week", "by Friday" -> deadline: the expression itself, priority: important
-- "next week", "next month" -> deadline: the expression itself, priority: normal
+- "next week", "next month" -> deadline: the expression itself, priority: important if it
+  is a meeting/event or an action item, otherwise normal
 - "before the meeting" -> deadline: "before the meeting" (do NOT invent a date)
 - No time expression -> deadline: null
 
@@ -155,10 +164,11 @@ class GroqProvider(BaseLLMProvider):
             messages=[{"role": "user", "content": prompt + "\n/no_think"}],
             temperature=0.3,
             max_tokens=MAX_OUTPUT_TOKENS,
-            # Disable heavy reasoning for faster responses and lower token usage.
-            # Use 'low' reasoning effort and strict JSON format so each analysis
-            # stays within one small, parseable response.
-            reasoning_effort="low",
+            # Qwen 3.6 27B reasons by default and burns its whole output
+            # budget (and the Groq OTPM cap) on a "thinking" block that we
+            # never surface. Disable reasoning and ask for strict JSON so
+            # each analysis stays within one small, parseable response.
+            reasoning_effort="none",
             response_format={"type": "json_object"},
         )
         raw_content = response.choices[0].message.content

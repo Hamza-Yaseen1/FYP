@@ -35,7 +35,11 @@ GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1"
 GMAIL_TOKENINFO_URL = "https://oauth2.googleapis.com/tokeninfo"
 
 GMAIL_SCOPES = "https://www.googleapis.com/auth/gmail.readonly"
-GMAIL_MAX_RESULTS = 20
+# Page size for users.messages.list — raised so an inbox burst isn't silently
+# truncated to the first page. Bounded page COUNT keeps runaway accounts capped.
+GMAIL_MAX_RESULTS = int(os.getenv("GMAIL_MAX_RESULTS", "100"))
+GMAIL_MAX_PAGES = int(os.getenv("GMAIL_MAX_PAGES", "10"))
+GMAIL_INBOX_QUERY = "in:inbox"  # only the Dashboard-relevant mailbox
 
 # Signing secret for the short-lived OAuth state JWT.
 # Same secret as the session cookie — the user already trusts us with it.
@@ -240,32 +244,68 @@ async def _ensure_access_token(
     return raw_access
 
 
+def _to_epoch(value: Any) -> Optional[int]:
+    """Coerce a datetime/int to Unix seconds.
+
+    Naive datetimes are treated as UTC — several connection paths persist
+    ``datetime.utcnow()``, and ``.timestamp()`` on a naive value would
+    otherwise shift by the local timezone offset.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return int(value.timestamp())
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def list_new_message_ids(
     access_token: str,
     after_epoch: Optional[int] = None,
     max_results: int = GMAIL_MAX_RESULTS,
+    max_pages: int = GMAIL_MAX_PAGES,
 ) -> List[str]:
-    """List Gmail message IDs fetched after *after_epoch* (Unix seconds).
+    """List Gmail message IDs, paging through every result.
 
-    Uses ``q=after:<epoch>`` for read-only compatible date filtering.
+    The query is ``in:inbox`` so the Dashboard gets the messages that matter,
+    optionally narrowed with ``after:<epoch>`` for incremental scans. When
+    *after_epoch* is None (first-ever poll / forced full refresh) the time
+    filter is omitted entirely — older emails are scanned too, not skipped.
+
+    Pagination follows ``nextPageToken`` so a poll never truncates at the
+    first ``maxResults`` messages. The scan is bounded by
+    ``max_results * max_pages`` messages (~1000 by default).
     """
-    q_parts: List[str] = []
+    q_parts = [GMAIL_INBOX_QUERY]
     if after_epoch is not None:
         q_parts.append(f"after:{after_epoch}")
-    query = " ".join(q_parts) if q_parts else ""
-    params: Dict[str, Any] = {"maxResults": max_results}
-    if query:
-        params["q"] = query
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{GMAIL_API_BASE}/users/me/messages",
-            headers={"Authorization": f"Bearer {access_token}"},
-            params=params,
-        )
-    if resp.status_code != 200:
-        logger.warning("Gmail list failed (%s): %s", resp.status_code, resp.text)
-        return []
-    return [m["id"] for m in resp.json().get("messages", [])]
+    query = " ".join(q_parts)
+
+    ids: List[str] = []
+    page_token: Optional[str] = None
+    for _ in range(max_pages):
+        params: Dict[str, Any] = {"maxResults": max_results, "q": query}
+        if page_token:
+            params["pageToken"] = page_token
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{GMAIL_API_BASE}/users/me/messages",
+                headers={"Authorization": f"Bearer {access_token}"},
+                params=params,
+            )
+        if resp.status_code != 200:
+            logger.warning("Gmail list failed (%s): %s", resp.status_code, resp.text)
+            break
+        body = resp.json()
+        ids.extend(m["id"] for m in body.get("messages", []))
+        page_token = body.get("nextPageToken")
+        if not page_token:
+            break
+    return ids
 
 
 async def get_message_raw(access_token: str, message_id: str) -> Optional[dict]:
@@ -403,69 +443,117 @@ async def poll_connected_gmail() -> None:
             logger.exception("Poll failed for connection %s — skipping", conn_id)
 
 
-async def _poll_one_connection(conn_doc: dict, conn_id: str, user_id: str) -> None:
-    """Fetch new emails for one Gmail connection and ingest them."""
-    svc = ConnectionService(db)
-    
-    access_token = await _ensure_access_token(conn_doc, conn_id, user_id)
-    if access_token is None:
-        logger.warning("Cannot refresh token for %s — marking error", conn_id)
-        await svc.set_connection_error(conn_id, user_id)
-        return
-
-    # Watermark: use last_fetched_at, default to connection creation − 1h
-    last_fetched = conn_doc.get("last_fetched_at")
-    if last_fetched is None:
-        created = conn_doc.get("created_at", datetime.now(timezone.utc))
-        if isinstance(created, datetime):
-            last_fetched = created - timedelta(hours=1)
-        else:
-            last_fetched = datetime.now(timezone.utc) - timedelta(hours=1)
-    after_epoch = int(last_fetched.timestamp()) if isinstance(last_fetched, datetime) else int(last_fetched)
-
-    message_ids = await list_new_message_ids(access_token, after_epoch=after_epoch)
-    if not message_ids:
-        return
-
-    from services.webhook_ingest import ingest_message
-
-    # Fetch + ingest each message concurrently, bounded so a burst of new
-    # mail cannot open a full-second wave of parallel Google calls. Errors
-    # are isolated per message and never abort the rest of the batch.
-    sem = asyncio.Semaphore(5)
-
-    async def _fetch_and_ingest(mid: str) -> None:
-        try:
-            async with sem:
-                raw = await get_message_raw(access_token, mid)
-                if raw is None:
-                    return
-                norm = normalize_email(raw)
-                if norm is None:
-                    return
-                await ingest_message(
-                    user_id=user_id,
-                    source="gmail",
-                    sender=norm["sender"],
-                    content=norm["content"],
-                    external_message_id=norm["external_message_id"],
-                    subject=norm.get("subject") or None,
-                )
-        except Exception:
-            logger.exception(
-                "Gmail fetch/ingest failed for message %s — skipping", mid
-            )
-
-    await asyncio.gather(*(_fetch_and_ingest(mid) for mid in message_ids))
-
-    # Advance watermark
+async def _advance_watermark(svc: ConnectionService, conn_doc: dict) -> None:
+    """Move the connection watermark to now after a successful poll."""
     now = datetime.now(timezone.utc)
     await svc.collection.update_one(
         {"_id": conn_doc["_id"]},
         {"$set": {"last_fetched_at": now, "updated_at": now}},
     )
+
+
+async def _stored_external_count(user_id: str, ids: List[str]) -> int:
+    """Count how many of *ids* are already persisted for this user."""
+    try:
+        return await db["messages"].count_documents(
+            {"user_id": user_id, "external_message_id": {"$in": ids}}
+        )
+    except Exception as exc:
+        logger.warning("Gmail stored-id count failed: %s", exc, exc_info=True)
+        return 0
+
+
+async def _poll_one_connection(
+    conn_doc: dict, conn_id: str, user_id: str, force_full_scan: bool = False
+) -> dict:
+    """Fetch and ingest inbox emails for one Gmail connection.
+
+    Returns a summary dict (found/fetched/saved/duplicates/failed) so both
+    the background poller (log line) and the manual refresh endpoint can
+    report how many emails were seen vs actually stored.
+
+    Watermark behaviour:
+    - ``last_fetched_at`` missing (first-ever poll) → full INBOX scan with no
+      ``after:`` filter, so emails that arrived before the connection was
+      created are still ingested.
+    - ``force_full_scan=True`` → the same unrestricted scan (manual refresh).
+    - otherwise only messages newer than the watermark are scanned.
+    """
+    svc = ConnectionService(db)
+    stats = {"found": 0, "fetched": 0, "saved": 0, "duplicates": 0, "failed": 0}
+
+    access_token = await _ensure_access_token(conn_doc, conn_id, user_id)
+    if access_token is None:
+        logger.warning("Cannot refresh token for %s — marking error", conn_id)
+        await svc.set_connection_error(conn_id, user_id)
+        return stats
+
+    full_scan = force_full_scan or conn_doc.get("last_fetched_at") is None
+    after_epoch = None if full_scan else _to_epoch(conn_doc.get("last_fetched_at"))
+
+    message_ids = await list_new_message_ids(access_token, after_epoch=after_epoch)
+    stats["found"] = len(message_ids)
+
+    if message_ids:
+        from services.webhook_ingest import ingest_message
+
+        # Snapshot how many of the found ids are already stored — those are
+        # duplicates. The unique {user_id, external_message_id} index guards
+        # the rest, so a duplicate delivery can never double-save.
+        pre_existing = await _stored_external_count(user_id, message_ids)
+        stats["duplicates"] = pre_existing
+
+        # Fetch + ingest each message concurrently, bounded so a burst of new
+        # mail cannot open a full wave of parallel Google calls. Errors are
+        # isolated per message and never abort the rest of the batch.
+        sem = asyncio.Semaphore(5)
+
+        async def _fetch_and_ingest(mid: str) -> None:
+            try:
+                async with sem:
+                    raw = await get_message_raw(access_token, mid)
+                    if raw is None:
+                        stats["failed"] += 1
+                        return
+                    norm = normalize_email(raw)
+                    if norm is None:
+                        stats["failed"] += 1
+                        return
+                    stats["fetched"] += 1
+                    await ingest_message(
+                        user_id=user_id,
+                        source="gmail",
+                        sender=norm["sender"],
+                        content=norm["content"],
+                        external_message_id=norm["external_message_id"],
+                        subject=norm.get("subject") or None,
+                    )
+            except Exception:
+                stats["failed"] += 1
+                logger.exception(
+                    "Gmail fetch/ingest failed for message %s — skipping", mid
+                )
+
+        await asyncio.gather(*(_fetch_and_ingest(mid) for mid in message_ids))
+
+        # Now count the same ids again — the delta is what this poll actually
+        # saved (new), the snapshot was already there (duplicates).
+        stored_after = await _stored_external_count(user_id, message_ids)
+        stats["saved"] = max(0, stored_after - pre_existing)
+
+    # Advance watermark — done even on an empty scan so the next cycle runs a
+    # cheap incremental poll instead of repeating a full scan every 30s.
+    await _advance_watermark(svc, conn_doc)
+
     logger.info(
-        "Poll complete for connection %s: %d messages processed",
+        "Gmail poll %s complete: found=%d fetched=%d saved=%d duplicates=%d "
+        "failed=%d (full_scan=%s)",
         conn_id,
-        len(message_ids),
+        stats["found"],
+        stats["fetched"],
+        stats["saved"],
+        stats["duplicates"],
+        stats["failed"],
+        full_scan,
     )
+    return stats

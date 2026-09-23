@@ -23,6 +23,7 @@ from services.gmail import (
     get_gmail_email_display,
     verify_state,
 )
+from services.gmail import _poll_one_connection
 from utils.encryption import encrypt
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,33 @@ async def auth_url(current_user: dict = Depends(get_current_user)):
     user_id = str(current_user["_id"])
     url = build_authorization_url(user_id)
     return {"auth_url": url}
+
+
+@router.post("/refresh")
+async def refresh_gmail(current_user: dict = Depends(get_current_user)):
+    """Trigger an immediate full Gmail resync for the current user.
+
+    Runs the poller right now with a forced full INBOX scan (no ``after:``
+    time filter), so older emails the narrow watermark may have skipped are
+    picked up. The {user_id, external_message_id} unique index keeps already
+    stored emails from being duplicated.
+
+    Returns what the poll actually found vs saved.
+    """
+    user_id = str(current_user["_id"])
+    svc = ConnectionService(db)
+    conn = await svc.collection.find_one(
+        {"user_id": user_id, "provider": "gmail", "status": "connected"}
+    )
+    if conn is None:
+        raise HTTPException(status_code=404, detail="No connected Gmail account")
+
+    conn_id = str(conn["_id"])
+    logger.info("Manual Gmail refresh triggered for user %s", user_id)
+    summary = await _poll_one_connection(
+        conn, conn_id, user_id, force_full_scan=True
+    )
+    return {"connection_id": conn_id, **summary}
 
 
 async def _run_callback(code: str, state: str, error: str) -> RedirectResponse:
