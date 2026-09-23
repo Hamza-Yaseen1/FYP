@@ -9,6 +9,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from dotenv import load_dotenv
 import logging
 
+
+from pymongo import MongoClient
 from database import users_collection, messages_collection, tasks_collection, connections_collection, create_indexes, DB_NAME
 from routes.auth import router as auth_router
 from routes.messages import router as messages_router
@@ -155,7 +157,16 @@ def read_root():
 def health_check():
     return {"status": "ok"}
 
+@app.get("/test-db")
+def test_db():
+    try:
 
+        mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+        client = MongoClient(mongo_uri)
+        client.admin.command("ping")
+        return {"message": "MongoDB is connected successfully"}
+    except Exception as e:
+        return {"error": str(e)}
 
 app.include_router(auth_router)
 app.include_router(messages_router)

@@ -19,8 +19,25 @@ logger = logging.getLogger(__name__)
 _pending_tasks: set = set()
 
 
+def build_analysis_text(content: str, subject: Optional[str] = None) -> str:
+    """Combine an optional subject line with the body for AI analysis.
+
+    Gmail stores ``subject`` separately from ``content``; the AI must see
+    both or the model can miss urgency expressed only in the subject
+    (e.g. "Action Required: Submit report by tomorrow"). WhatsApp messages
+    have no subject, so the text stays byte-identical to the body.
+    """
+    if subject and subject.strip():
+        return f"Subject: {subject.strip()}\n\n{content}"
+    return content
+
+
 async def _analyze_and_store(
-    content: str, message_id: str, user_id: str, thread_id: str = None
+    content: str,
+    message_id: str,
+    user_id: str,
+    thread_id: str = None,
+    subject: Optional[str] = None,
 ) -> None:
     """Run the AI pipeline for an ingested message and persist its result.
 
@@ -32,7 +49,7 @@ async def _analyze_and_store(
     """
     try:
         analysis = await process_message(
-            content,
+            build_analysis_text(content, subject),
             message_id=message_id,
             user_id=user_id,
             thread_id=thread_id,
@@ -130,11 +147,11 @@ async def ingest_message(
 
     if background_tasks is not None:
         background_tasks.add_task(
-            _analyze_and_store, content, message_id, user_id, thread_id
+            _analyze_and_store, content, message_id, user_id, thread_id, subject
         )
     else:
         task = asyncio.create_task(
-            _analyze_and_store(content, message_id, user_id, thread_id)
+            _analyze_and_store(content, message_id, user_id, thread_id, subject)
         )
         _pending_tasks.add(task)
         task.add_done_callback(_pending_tasks.discard)

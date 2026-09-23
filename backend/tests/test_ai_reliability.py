@@ -153,8 +153,11 @@ class TestAIReliability:
         before = sync_db.messages.find_one({"_id": original_id})
         assert before["ai_analysis"]["status"] == "pending"
 
-        retried = client.portal.call(retry_pending_analyses)
-        assert retried >= 1
+        summary = client.portal.call(retry_pending_analyses)
+        assert summary["scanned"] == 1
+        assert summary["completed"] == 1
+        assert summary["failed"] == 0
+        assert summary["remaining_pending"] == 0
 
         doc_after = sync_db.messages.find_one({"_id": original_id})
         assert doc_after is not None
@@ -175,9 +178,114 @@ class TestAIReliability:
 
         original_id = ObjectId(msg_id)
 
-        client.portal.call(retry_pending_analyses)
-        client.portal.call(retry_pending_analyses)
+        first = client.portal.call(retry_pending_analyses)
+        assert first["completed"] == 1
+
+        second = client.portal.call(retry_pending_analyses)
+        assert second["scanned"] == 0
+        assert second["completed"] == 0
 
         doc_after = sync_db.messages.find_one({"_id": original_id})
         assert doc_after["ai_analysis"]["status"] == "completed"
         assert sync_db.messages.count_documents({"user_id": uid}) == 1
+
+    # ── T018: retry sends subject + body to the AI ─────────────────────────
+
+    def test_retry_pending_includes_subject(self, client, sync_db, monkeypatch):
+        from services.retry_pending import retry_pending_analyses
+
+        captured: dict = {}
+
+        async def _record_analyze(content, message_id=None, user_id=None, thread_id=None):
+            captured["content"] = content
+            return {**await _completed_analyze(content), "priority": "urgent"}
+
+        monkeypatch.setattr(
+            "services.retry_pending.process_message", _record_analyze
+        )
+
+        uid = _register(client, "ai-subject@test.com")
+        msg_id = _insert_pending_message(
+            sync_db,
+            uid,
+            content="Please fix the production outage",
+        )
+        sync_db.messages.update_one(
+            {"_id": ObjectId(msg_id)},
+            {"$set": {"subject": "Action Required: server down"}},
+        )
+
+        summary = client.portal.call(retry_pending_analyses)
+        assert summary["completed"] == 1
+
+        assert captured["content"] == (
+            "Subject: Action Required: server down\n\nPlease fix the production outage"
+        )
+
+        doc_after = sync_db.messages.find_one({"_id": ObjectId(msg_id)})
+        assert doc_after["ai_analysis"]["status"] == "completed"
+        assert doc_after["ai_analysis"]["priority"] == "urgent"
+
+    # ── T019: repeated unresolved retries stop early (rate-limit guard) ────
+
+    def test_retry_stops_early_on_consecutive_failures(self, client, sync_db, monkeypatch):
+        from services.retry_pending import _reanalyze_pending
+
+        monkeypatch.setattr(
+            "services.retry_pending.process_message", _pending_analyze
+        )
+
+        uid = _register(client, "ai-throttle@test.com")
+        for i in range(3):
+            _insert_pending_message(sync_db, uid, content=f"Message {i}")
+
+        summary = client.portal.call(
+            _reanalyze_pending,
+            {"user_id": uid, "ai_analysis.status": "pending"},
+            None,  # limit
+            0.0,   # sleep_seconds (test speed)
+            2,     # max_consecutive_failures
+        )
+        assert summary["scanned"] == 2
+        assert summary["completed"] == 0
+        assert summary["failed"] == 2
+        assert summary["rate_limited"] is True
+        assert summary["remaining_pending"] == 3
+
+    # ── T020: bulk endpoint re-analyzes only the current user's pending ────
+
+    def test_bulk_endpoint_reanalyzes_own_pending_only(self, client, sync_db, monkeypatch):
+        monkeypatch.setattr(
+            "services.retry_pending.process_message", _completed_analyze
+        )
+
+        # Register user B FIRST so the final registration (user A) leaves the
+        # session pointing at A — the endpoint is user-scoped via the cookie.
+        uid_b = _register(client, "bulk-b@test.com")
+        _insert_pending_message(sync_db, uid_b, content="B1")
+
+        uid_a = _register(client, "bulk-a@test.com")
+        _insert_pending_message(sync_db, uid_a, content="A1")
+        _insert_pending_message(sync_db, uid_a, content="A2")
+
+        res = client.post("/messages/reanalyze-pending")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["scanned"] == 2
+        assert body["completed"] == 2
+        assert body["failed"] == 0
+        assert body["remaining_pending"] == 0
+        assert body["rate_limited"] is False
+
+        a_pending = sync_db.messages.count_documents(
+            {"user_id": uid_a, "ai_analysis.status": "pending"}
+        )
+        assert a_pending == 0
+
+        b_docs = sync_db.messages.find({"user_id": uid_b}).to_list(length=10)
+        assert len(b_docs) == 1
+        assert b_docs[0]["ai_analysis"]["status"] == "pending"
+
+    def test_bulk_endpoint_requires_auth(self, client):
+        res = client.post("/messages/reanalyze-pending")
+        assert res.status_code == 401

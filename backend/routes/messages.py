@@ -13,7 +13,9 @@ from models.message import (
     message_doc_to_response,
 )
 from services.threads import resolve_and_stamp
-from services.webhook_ingest import _analyze_and_store
+from services.webhook_ingest import _analyze_and_store, build_analysis_text
+from services.ai import process_message
+from services.retry_pending import reanalyze_user_pending
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,82 @@ async def create_message(
     )
 
     return message_doc_to_response(doc)
+
+
+@router.post("/reanalyze-pending")
+async def reanalyze_pending_messages(
+    current_user: dict = Depends(get_current_user),
+):
+    """Bulk re-analyze every message of the current user whose analysis is
+    ``pending`` (e.g. degraded during a provider outage). Runs the same AI
+    pipeline the poller/ingest paths use, user-scoped, paced so a large
+    backlog cannot trip the provider rate limit. Returns a summary dict:
+    {scanned, completed, failed, remaining_pending, rate_limited, limit}.
+    """
+    uid = str(current_user["_id"])
+    return await reanalyze_user_pending(uid)
+
+
+@router.post("/{message_id}/reanalyze", response_model=MessageResponse)
+async def reanalyze_message(
+    message_id: str, current_user: dict = Depends(get_current_user)
+):
+    """Re-run the AI pipeline for one stored message (e.g. a Gmail message
+    whose analysis degraded to pending, or that was classified before the
+    subject was passed to the model), then persist the fresh result in place.
+
+    User-scoped: an absent or foreign message yields 404. The re-analysis is
+    synchronous so the caller receives the updated analysis immediately.
+    """
+    if not ObjectId.is_valid(message_id):
+        raise HTTPException(status_code=404)
+
+    uid = str(current_user["_id"])
+    doc = await messages_collection.find_one(
+        {"_id": ObjectId(message_id), "user_id": uid}
+    )
+    if not doc:
+        raise HTTPException(status_code=404)
+
+    try:
+        analysis = await process_message(
+            build_analysis_text(doc.get("content") or "", doc.get("subject")),
+            message_id=message_id,
+            user_id=uid,
+            thread_id=doc.get("threadId"),
+        )
+    except Exception as exc:
+        logger.error("Re-analysis crashed for %s: %s", message_id, exc)
+        analysis = {
+            "priority": "normal",
+            "confidence": 0.0,
+            "explanation": "Analysis failed, defaulting to normal priority",
+            "summary": None,
+            "recommended_action": "",
+            "recommended_actions": [],
+            "tasks_extracted": [],
+            "deadlines": [],
+            "provider": "groq",
+            "analyzed_at": None,
+            "status": "pending",
+        }
+    await messages_collection.update_one(
+        {"_id": ObjectId(message_id), "user_id": uid},
+        {"$set": {"ai_analysis": analysis}},
+    )
+
+    updated = await messages_collection.find_one(
+        {"_id": ObjectId(message_id), "user_id": uid}
+    )
+    return message_doc_to_response(updated)
+
+
+@router.delete("", status_code=200)
+async def clear_inbox(current_user: dict = Depends(get_current_user)):
+    """Permanently delete every message belonging to the current user."""
+    uid = str(current_user["_id"])
+    result = await messages_collection.delete_many({"user_id": uid})
+    return {"deleted": result.deleted_count}
 
 
 @router.get("")
@@ -300,6 +378,7 @@ async def override_priority(
                 "ai_analysis.priority": priority,
                 "ai_analysis.confidence": 1.0,
                 "ai_analysis.explanation": "User override",
+                "ai_analysis.status": "completed",
                 "updated_at": now,
             }
         },

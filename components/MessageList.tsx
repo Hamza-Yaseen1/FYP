@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Trash2, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import PriorityBadge from "@/components/PriorityBadge";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { useTimeAgo } from "@/lib/use-time-ago";
 import { apiFetch, clearCache } from "@/lib/api";
 
@@ -19,6 +19,7 @@ interface Message {
     priority: string;
     confidence: number;
     explanation?: string;
+    status?: string;
     summary?: string;
     recommended_action?: string;
     deadlines?: string[];
@@ -145,28 +146,17 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
         ))}
       </div>
 
-      {/* Delete Confirmation Dialog */}
       {deleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-lg">
-            <h3 className="text-base font-semibold">Delete message</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Are you sure you want to delete this message? This action cannot be undone.
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setDeleteId(null)}
-                disabled={deleting}
-              >
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-                {deleting ? "Deleting…" : "Delete"}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          open
+          title="Delete message"
+          description="Are you sure you want to delete this message? This action cannot be undone."
+          confirmLabel={deleting ? "Deleting…" : "Delete"}
+          confirmVariant="destructive"
+          loading={deleting}
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteId(null)}
+        />
       )}
     </>
   );
@@ -224,6 +214,7 @@ function MessageCard({
                 priority={analysis.priority}
                 confidence={analysis.confidence}
                 explanation={analysis.explanation}
+                status={analysis.status}
               />
             </div>
           )}

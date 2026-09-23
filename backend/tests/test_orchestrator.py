@@ -468,3 +468,100 @@ def test_get_provider_failure_still_attaches_routing(monkeypatch):
     assert failed["status"] == "pending"
     assert failed["routing"]["llm_call_used"] is True
     assert failed["routing"]["skip_reason"] == "full"
+def test_provider_uses_reasoning_effort_none(monkeypatch):
+    """The Groq call MUST disable reasoning: Qwen 3.6 27B burns its output
+    budget on a thinking block otherwise, which trips the OTPM 429 guard and
+    degrades every analysis to the pending fallback (Normal 0% + Review)."""
+    import types
+
+    import services.ai.providers.groq as groq_mod
+
+    recorded: dict = {}
+
+    choices = [
+        types.SimpleNamespace(
+            message=types.SimpleNamespace(
+                content='{"priority": "urgent", "confidence": 0.9, "explanation": "fast"}'
+            )
+        )
+    ]
+
+    class _FakeCompletions:
+        async def create(self, **kwargs):
+            recorded["kwargs"] = kwargs
+            return types.SimpleNamespace(choices=choices)
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class _FakeClient:
+        def __init__(self, api_key=None):
+            self.chat = _FakeChat
+
+    monkeypatch.setattr(groq_mod, "AsyncGroq", _FakeClient)
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+
+    provider = groq_mod.GroqProvider()
+    result = asyncio.run(provider._complete("hello"))
+
+    assert recorded["kwargs"]["reasoning_effort"] == "none"
+    assert recorded["kwargs"]["response_format"] == {"type": "json_object"}
+    assert result["priority"] == "urgent"
+
+def test_task_storage_failure_keeps_analysis_completed(monkeypatch):
+    """A tasks_db hiccup must never demote a successful analysis to pending."""
+    from services.ai.analyzer import analyze_message
+    from services.ai.routing import RoutingDecision
+
+    class _BoomTasks:
+        async def insert_many(self, docs):
+            raise RuntimeError("tasks db unreachable")
+
+    monkeypatch.setattr("services.ai.analyzer.tasks_collection", _BoomTasks())
+
+    class _FakeResult:
+        priority = "urgent"
+        confidence = 0.91
+        explanation = "server down today"
+        summary = "production server is down"
+        recommended_actions = ["Fix the server today"]
+        deadlines = ["today"]
+        context_updates = []
+        tasks_extracted = [
+            {
+                "description": "Fix the server",
+                "deadline": "today",
+                "priority_indicator": "urgent",
+                "requires_action": True,
+            }
+        ]
+
+    class _FakeProvider:
+        async def analyze(self, message, context=None, current_message_id=None):
+            return _FakeResult()
+
+    monkeypatch.setattr("services.ai.analyzer.get_provider", lambda: _FakeProvider())
+
+    routing = RoutingDecision(
+        needs_analysis=True,
+        needs_llm=True,
+        run_summary=True,
+        run_task_extraction=True,
+        run_deadline_detection=True,
+        run_recommended_action=True,
+    )
+
+    result = asyncio.run(
+        analyze_message(
+            "Please fix our production server today",
+            message_id="msg1",
+            user_id="user1",
+            run_tasks=True,
+            routing=routing,
+        )
+    )
+    assert result["status"] == "completed"
+    assert result["priority"] == "urgent"
+    assert result["confidence"] == 0.91
+    assert result["summary"] == "production server is down"
+    assert result["deadlines"] == ["today"]

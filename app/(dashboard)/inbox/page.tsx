@@ -2,14 +2,17 @@
 
 import { Suspense, useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
+import { Trash2 } from "lucide-react";
 import { GlassCard } from "@/components/GlassCard";
+import { Button } from "@/components/ui/button";
 import InboxTabs from "@/components/InboxTabs";
 import FilterBar from "@/components/FilterBar";
 import SearchBar from "@/components/SearchBar";
 import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import PriorityBadge from "@/components/PriorityBadge";
-import { apiFetch } from "@/lib/api";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import { apiFetch, clearCache } from "@/lib/api";
 
 interface Message {
   id: string;
@@ -88,6 +91,8 @@ function InboxPageInner() {
   const [endDate, setEndDate] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(searchParams.get("q") ?? "");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showClearInbox, setShowClearInbox] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   // Debounced search: the actual query sent to the API lags behind the
   // input value by INBOX_DEBOUNCE_MS to avoid fire-hosing the backend on
@@ -107,18 +112,26 @@ function InboxPageInner() {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
   }, []);
 
-  // Fetch counts and senders once on mount — they are independent of the
-  // active filters and must not re-fire on every keystroke.
-  useEffect(() => {
-    let cancelled = false;
-    apiFetch<FilterCounts>("/messages/counts")
-      .then((data) => { if (!cancelled) setCounts(data); })
-      .catch((err) => console.error("Failed to fetch counts:", err));
-    apiFetch<SendersResponse>("/messages/senders")
-      .then((data) => { if (!cancelled) setSenders(data.senders || []); })
-      .catch((err) => console.error("Failed to fetch senders:", err));
-    return () => { cancelled = true; };
+  // Fetch counts and senders. They are independent of the active filters and
+  // must not re-fire on every keystroke, so they live apart from the message
+  // fetch — but DO re-run after bulk mutations like "Clear inbox".
+  const loadMeta = useCallback(() => {
+    return Promise.all([
+      apiFetch<FilterCounts>("/messages/counts"),
+      apiFetch<SendersResponse>("/messages/senders"),
+    ])
+      .then(([countsData, sendersData]) => {
+        setCounts(countsData);
+        setSenders(sendersData.senders || []);
+      })
+      .catch((err) => {
+        console.error("Failed to refresh inbox counts:", err);
+      });
   }, []);
+
+  useEffect(() => {
+    loadMeta();
+  }, [loadMeta]);
 
   // Fetch messages whenever filters change (debounced search used here).
   useEffect(() => {
@@ -195,6 +208,22 @@ function InboxPageInner() {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
   };
 
+  const handleClearInbox = async () => {
+    setClearing(true);
+    try {
+      await apiFetch("/messages", { method: "DELETE" });
+      clearCache();
+      setMessages([]);
+      setTotal(0);
+      await loadMeta();
+    } catch (err) {
+      console.error("Failed to clear inbox:", err);
+    } finally {
+      setClearing(false);
+      setShowClearInbox(false);
+    }
+  };
+
   const tabsWithCounts = TABS.map((tab) => ({
     ...tab,
     count: counts?.tabs[tab.id as keyof FilterCounts["tabs"]],
@@ -217,13 +246,23 @@ function InboxPageInner() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Inbox</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {total} message{total !== 1 ? "s" : ""} in
           </p>
         </div>
+        {total > 0 && (
+          <Button
+            variant="outline"
+            onClick={() => setShowClearInbox(true)}
+            className="shrink-0"
+          >
+            <Trash2 className="size-4" aria-hidden />
+            Clear inbox
+          </Button>
+        )}
       </div>
 
       <GlassCard className="mt-6 space-y-4 p-4 sm:p-5">
@@ -285,6 +324,17 @@ function InboxPageInner() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={showClearInbox}
+        title="Clear inbox"
+        description={`This will permanently delete all ${total} message${total !== 1 ? "s" : ""} in your inbox. This action cannot be undone.`}
+        confirmLabel={clearing ? "Clearing…" : "Clear inbox"}
+        confirmVariant="destructive"
+        loading={clearing}
+        onConfirm={handleClearInbox}
+        onCancel={() => setShowClearInbox(false)}
+      />
     </div>
   );
 }
