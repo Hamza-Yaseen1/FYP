@@ -297,7 +297,7 @@ class TestAuthCoverage:
         ("GET", "/webhooks/whatsapp"),
         ("POST", "/webhooks/whatsapp"),
     }
-    API_PREFIXES = ("/auth", "/messages", "/tasks", "/webhooks", "/health")
+    API_PREFIXES = ("/auth", "/messages", "/tasks", "/webhooks", "/health", "/jarvis")
 
     def test_all_api_routes_require_session_except_allowlist(self):
         from fastapi.routing import APIRoute
@@ -305,19 +305,38 @@ class TestAuthCoverage:
         from dependencies import get_current_user
         from main import app
 
+        def flatten_single(route):
+            # Newer FastAPI wraps included routers in _IncludedRouter;
+            # unwrap them so every APIRoute is still audited.
+            routes = [route]
+            while routes:
+                current = routes.pop()
+                if isinstance(current, APIRoute):
+                    yield current
+                    continue
+                router = getattr(current, "original_router", None)
+                if router is not None and getattr(router, "routes", None):
+                    routes.extend(router.routes)
+
+        def flatten(routes):
+            for route in routes:
+                yield from flatten_single(route)
+
         def uses_current_user(route):
             stack = [route.dependant]
+            seen = set()
             while stack:
                 dep = stack.pop()
+                if id(dep) in seen:
+                    continue
+                seen.add(id(dep))
                 if dep.call is get_current_user:
                     return True
                 stack.extend(dep.dependencies)
             return False
 
         checked = []
-        for route in app.routes:
-            if not isinstance(route, APIRoute):
-                continue
+        for route in flatten(app.routes):
             if not route.path.startswith(self.API_PREFIXES):
                 continue
             for method in sorted(route.methods - {"HEAD", "OPTIONS"}):
@@ -329,3 +348,4 @@ class TestAuthCoverage:
                 checked.append((method, route.path))
 
         assert len(checked) >= 10, f"audit covered only {len(checked)} routes"
+        assert ("POST", "/jarvis/chat") in checked, "jarvis endpoint not audited"

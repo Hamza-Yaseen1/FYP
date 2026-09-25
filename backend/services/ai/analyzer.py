@@ -3,7 +3,7 @@ import logging
 import traceback
 from bson import ObjectId
 from .providers.base import BaseLLMProvider, AIAnalysisResult
-from .providers.groq import GroqProvider
+from .providers.groq import GroqProvider, GroqUnavailableError
 from .attention import evaluate_attention
 from .routing import RoutingDecision
 from database import tasks_collection
@@ -115,33 +115,21 @@ async def analyze_message(
                         "created_at": datetime.now(timezone.utc),
                     })
                 if task_docs:
-                    try:
-                        await tasks_collection.insert_many(task_docs)
-                        logger.info(
-                            "Stored %d tasks for message %s",
-                            len(task_docs),
-                            message_id,
-                        )
-                    except Exception:
-                        # Task storage is a side effect of a SUCCESSFUL analysis.
-                        # A DB hiccup here must never demote a completed analysis
-                        # to the "pending" stub — the message stays analyzed and
-                        # the failure is only logged.
-                        logger.warning(
-                            "Task persistence failed for message %s; analysis kept",
-                            message_id,
-                            exc_info=True,
-                        )
+                    await tasks_collection.insert_many(task_docs)
+                    logger.info("Stored %d tasks for message %s", len(task_docs), message_id)
 
         return analysis
     except Exception as e:
-        error_text = str(e)
-        if "429" in error_text or "rate_limit" in error_text.lower():
+        if isinstance(e, GroqUnavailableError):
+            # Circuit breaker open (quota cooldown): one concise line per
+            # message, no stack trace, no repeated 429 spam.
+            logger.info("AI analysis deferred (Groq in cooldown): %s", e)
+        elif "429" in str(e) or "rate_limit" in str(e).lower():
             logger.error(
                 "AI analysis BLOCKED — Groq rate limit / daily token cap hit. "
                 "Message stored with fallback values until quota resets. "
                 "Provider said: %s",
-                error_text[:300],
+                str(e)[:300],
             )
         else:
             logger.error("AI analysis FAILED: %s", e, exc_info=True)
