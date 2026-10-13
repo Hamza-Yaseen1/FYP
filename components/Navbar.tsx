@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import ThemeToggle from "@/components/ThemeToggle";
+import { getRealtimeClient } from "@/lib/realtime";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,6 +55,7 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     setLoggingOut(true);
+    getRealtimeClient().disconnect();
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch {

@@ -4,7 +4,9 @@ pydantic
 motor
 python-dotenv
 groq
+openai
 bcrypt
+cryptography
 PyJWT
 email-validator
 

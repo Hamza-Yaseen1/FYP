@@ -44,6 +44,23 @@ async def _completed_analyze(content, message_id=None, user_id=None, thread_id=N
     }
 
 
+async def _terminal_failed_analyze(content, message_id=None, user_id=None, thread_id=None):
+    """A message too large for the model: terminal ``failed`` (never retried)."""
+    return {
+        "priority": "normal",
+        "confidence": 0.0,
+        "explanation": "Message is too large to analyze (exceeds the AI input limit).",
+        "summary": None,
+        "recommended_action": "",
+        "recommended_actions": [],
+        "tasks_extracted": [],
+        "deadlines": [],
+        "provider": "stub",
+        "analyzed_at": None,
+        "status": "failed",
+    }
+
+
 def _simulate_post(client, sender="Alice", message="Test reliability message"):
     return client.post(
         "/webhooks/simulate", json={"sender": sender, "message": message}
@@ -289,3 +306,57 @@ class TestAIReliability:
     def test_bulk_endpoint_requires_auth(self, client):
         res = client.post("/messages/reanalyze-pending")
         assert res.status_code == 401
+
+    # ── T021: oversized message is persisted as terminal failed, not re-pending ──
+
+    def test_retry_persists_terminal_failed_status(self, client, sync_db, monkeypatch):
+        from services.retry_pending import retry_pending_analyses
+
+        monkeypatch.setattr(
+            "services.retry_pending.process_message", _terminal_failed_analyze
+        )
+
+        uid = _register(client, "ai-toolarge@test.com")
+        msg_id = _insert_pending_message(sync_db, uid, content="x" * 50000)
+
+        summary = client.portal.call(retry_pending_analyses)
+
+        assert summary["scanned"] == 1
+        assert summary["failed"] == 1
+        assert summary["completed"] == 0
+        assert summary["remaining_pending"] == 0
+
+        doc = sync_db.messages.find_one({"_id": ObjectId(msg_id)})
+        assert doc["ai_analysis"]["status"] == "failed"
+
+        # A second sweep finds nothing to do — the message left the pending set.
+        again = client.portal.call(retry_pending_analyses)
+        assert again["scanned"] == 0
+
+    def test_terminal_failure_does_not_trip_early_stop(
+        self, client, sync_db, monkeypatch
+    ):
+        from services.retry_pending import _reanalyze_pending
+
+        monkeypatch.setattr(
+            "services.retry_pending.process_message", _terminal_failed_analyze
+        )
+
+        uid = _register(client, "ai-toolarge-many@test.com")
+        for i in range(3):
+            _insert_pending_message(sync_db, uid, content=f"Big {i}")
+
+        summary = client.portal.call(
+            _reanalyze_pending,
+            {"user_id": uid, "ai_analysis.status": "pending"},
+            None,  # limit
+            0.0,   # sleep_seconds
+            2,     # max_consecutive_failures
+        )
+
+        # Terminal failures are resolved, not unresolved: all three are drained
+        # and the sweep is never flagged rate-limited.
+        assert summary["scanned"] == 3
+        assert summary["failed"] == 3
+        assert summary["rate_limited"] is False
+        assert summary["remaining_pending"] == 0

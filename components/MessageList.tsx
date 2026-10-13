@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Trash2, Loader2 } from "lucide-react";
 import PriorityBadge from "@/components/PriorityBadge";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { useRealtime } from "@/components/RealtimeProvider";
 import { useTimeAgo } from "@/lib/use-time-ago";
 import { apiFetch, clearCache } from "@/lib/api";
 
@@ -68,6 +69,7 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const { version } = useRealtime();
 
   useEffect(() => {
     let cancelled = false;
@@ -82,7 +84,7 @@ export default function MessageList({ refreshKey }: { refreshKey: number }) {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [refreshKey]);
+  }, [refreshKey, version]);
 
   // Poll quietly while any message is still awaiting analysis. POST /messages
   // analyzes in the background, so un-analysed messages show up right away and

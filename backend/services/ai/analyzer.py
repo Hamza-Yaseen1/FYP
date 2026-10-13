@@ -3,12 +3,20 @@ import logging
 import traceback
 from bson import ObjectId
 from .providers.base import BaseLLMProvider, AIAnalysisResult
-from .providers.groq import GroqProvider, GroqUnavailableError
+from .providers.groq import GroqProvider, GroqUnavailableError, MessageTooLargeError
 from .attention import evaluate_attention
 from .routing import RoutingDecision
 from database import tasks_collection
 
 logger = logging.getLogger(__name__)
+
+# Terminal explanation stored when a message is too big for the model even
+# after truncation. This is a FAILED state, not ``pending``: retrying can never
+# help, so the retry sweep must not pick it up again.
+TOO_LARGE_EXPLANATION = (
+    "Message is too large to analyze (exceeds the AI input limit). "
+    "Analysis was skipped."
+)
 
 
 def get_provider() -> BaseLLMProvider:
@@ -115,28 +123,59 @@ async def analyze_message(
                         "created_at": datetime.now(timezone.utc),
                     })
                 if task_docs:
-                    await tasks_collection.insert_many(task_docs)
-                    logger.info("Stored %d tasks for message %s", len(task_docs), message_id)
+                    try:
+                        await tasks_collection.insert_many(task_docs)
+                        logger.info("Stored %d tasks for message %s", len(task_docs), message_id)
+                    except Exception as exc:
+                        # A tasks-collection hiccup must never demote a
+                        # successful analysis to "pending": the analysis is
+                        # still valid, the user just loses the derived tasks.
+                        logger.warning(
+                            "Task storage failed for message %s (%d tasks dropped): %s",
+                            message_id,
+                            len(task_docs),
+                            exc,
+                        )
 
         return analysis
     except Exception as e:
+        text = str(e)
+        # A request that exceeds the model's INPUT budget (Groq 413, surfaced
+        # as MessageTooLargeError after the shortened fallback also failed) is
+        # terminal: no retry and no quota cooldown can help. Marking it
+        # ``failed`` removes it from the retry sweep so it cannot loop forever.
+        too_large = isinstance(e, MessageTooLargeError) or (
+            "413" in text or "too large" in text.lower()
+        )
         if isinstance(e, GroqUnavailableError):
             # Circuit breaker open (quota cooldown): one concise line per
             # message, no stack trace, no repeated 429 spam.
             logger.info("AI analysis deferred (Groq in cooldown): %s", e)
-        elif "429" in str(e) or "rate_limit" in str(e).lower():
+        elif too_large:
+            # Checked BEFORE the 429 branch because the 413 body also carries
+            # "rate_limit"/"tokens per minute" wording — but it is a size
+            # problem, not an exhausted quota.
+            logger.error(
+                "AI analysis FAILED — message exceeds the model's input-token "
+                "limit even after truncation (413). Marked failed (terminal): "
+                "it will NOT be retried. Provider said: %s",
+                text[:300],
+            )
+        elif "429" in text or "rate_limit" in text.lower():
             logger.error(
                 "AI analysis BLOCKED — Groq rate limit / daily token cap hit. "
                 "Message stored with fallback values until quota resets. "
                 "Provider said: %s",
-                str(e)[:300],
+                text[:300],
             )
         else:
             logger.error("AI analysis FAILED: %s", e, exc_info=True)
         return {
             "priority": "normal",
             "confidence": 0.0,
-            "explanation": "Analysis failed, defaulting to normal priority",
+            "explanation": TOO_LARGE_EXPLANATION if too_large else (
+                "Analysis failed, defaulting to normal priority"
+            ),
             "summary": None,
             "recommended_action": "",
             "recommended_actions": [],
@@ -145,5 +184,5 @@ async def analyze_message(
             "context_updates": [],
             "provider": "groq",
             "analyzed_at": None,
-            "status": "pending",
+            "status": "failed" if too_large else "pending",
         }

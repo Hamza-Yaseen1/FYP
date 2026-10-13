@@ -1,21 +1,291 @@
 import os
 import re
 import json
+import time
+import asyncio
 import logging
-from groq import AsyncGroq
+from groq import (
+    AsyncGroq,
+    APIConnectionError,
+    APITimeoutError,
+    APIStatusError,
+    RateLimitError,
+)
 from .base import BaseLLMProvider, AIAnalysisResult
 from ..context import build_context_block
+from ..token_budget import (
+    MAX_MESSAGE_TOKENS,
+    MAX_PROMPT_TOKENS,
+    budget_context_messages,
+    budget_message,
+    estimate_tokens,
+    truncate_to_tokens,
+)
 
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
 
-MODEL_NAME = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+MODEL_NAME = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
-# Cap output tokens well under the free-tier OTPM limit (1000/min ~= 900+
-# output tokens) so a single analysis never trips Groq's 429 "request too
-# large" guard. With reasoning disabled the JSON answer is ~150-400 tokens.
-MAX_OUTPUT_TOKENS = int(os.getenv("GROQ_MAX_OUTPUT_TOKENS", "700"))
+# Faster, smaller model used as a ONE-SHOT rescue when the primary model
+# rejects a request as too large (413). It has a separate rate budget and a
+# compact context window, so a shortened prompt is far more likely to land.
+# Must be a model the account actually has access to; override via env.
+FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "openai/gpt-oss-20b")
+
+# Output-token budget for ONE analysis. Reasoning is disabled (see
+# ``reasoning_effort="none"`` below), so the whole answer is a compact JSON
+# object (~150-400 tokens incl. tasks). 400 leaves headroom while staying far
+# under the free-tier OTPM limit (1000/min), so parallel analyses do not trip
+# Groq's 429 "output tokens per minute" guard. NOTE: max_tokens only caps the
+# OUTPUT; the prompt's input tokens are trimmed separately (see ``build_context_block``
+# / JARVIS history clipping) so we never bill unused context.
+MAX_OUTPUT_TOKENS = int(os.getenv("GROQ_MAX_OUTPUT_TOKENS", "400"))
+
+# ── Controlled 429 / rate-limit handling ────────────────────────────────────
+# Two very different kinds of 429 exist, and they must be treated differently:
+# - TRANSIENT (OTPM "output tokens per minute", connection blips, 5xx): retry
+#   at most once, waiting never more than ~1s, then fall back gracefully.
+# - DAILY QUOTA (TPD "tokens per day" with Limit/Used/Requested, daily limit):
+#   NEVER retried — waiting 1s (or hours) cannot create quota. This error
+#   trips the circuit breaker so the app stops hammering an exhausted API.
+#
+# The SDK's default retry (max_retries=2) sleeps for a full Retry-After (up to
+# 60s), which is what caused the 5-25s stalls in the logs. We disable SDK
+# retries and run our own bounded loop: respect Groq's Retry-After only when it
+# is sane, cap every wait at 1s, and give up so the pipeline can fall back.
+RETRY_ATTEMPTS = max(1, int(os.getenv("GROQ_RETRY_ATTEMPTS", "2")))
+INITIAL_RETRY_DELAY = float(os.getenv("GROQ_INITIAL_RETRY_DELAY", "0.3"))
+MAX_RETRY_WAIT = min(float(os.getenv("GROQ_MAX_RETRY_WAIT", "1.0")), 1.0)
+
+# Circuit-breaker cooldown after a hard quota (TPD) error. During the cooldown
+# NO Groq request is attempted; every call raises ``GroqUnavailableError`` so
+# callers fall back instantly. After the cooldown a single probe request is
+# allowed: success closes the breaker, a quota error re-opens it.
+GROQ_COOLDOWN_SECONDS = float(os.getenv("GROQ_COOLDOWN_SECONDS", "600"))
+
+# How many Groq calls may be in flight at once (analysis + JARVIS + summary).
+# A tiny concurrency cap prevents a burst of ingested messages from tripping
+# the OTPM budget all at once.
+MAX_CONCURRENT_GROQ_CALLS = max(1, int(os.getenv("GROQ_MAX_CONCURRENT", "2")))
+
+# Per-request timeout so a hung call cannot hold a limiter slot forever.
+GROQ_TIMEOUT = float(os.getenv("GROQ_TIMEOUT", "30"))
+
+# Retriable HTTP statuses for TRANSIENT failures (SDK raises APIStatusError for
+# these). 429 is retried ONLY when it is not a TPD quota error
+# (``_is_tpd_quota``) — everything else (400/401/403/404/422...) is a caller
+# bug and must fail fast.
+_RETRYABLE_STATUSES = {408, 409, 423, 425}
+
+# Token-per-day / daily-quota markers. A 429 whose body/message contains these
+# cannot be fixed by a retry and must open the circuit breaker immediately.
+_TPD_RE = re.compile(r"tokens\s*per\s*day|\btpd\b", re.IGNORECASE)
+_DAILY_QUOTA_RE = re.compile(
+    r"\bdaily\b|\bper\s+day\b|\bquota\b", re.IGNORECASE
+)
+
+# Reused per event loop: tests spin up a fresh loop per asyncio.run while the
+# app runs one long-lived loop, so the semaphore/lock are (re)created lazily
+# per running loop and stay singletons in production.
+_rate_limit_state: dict = {"loop": None, "semaphore": None}
+_probe_lock_state: dict = {"loop": None, "lock": None}
+
+
+class GroqUnavailableError(RuntimeError):
+    """Raised when Groq is out of service (quota cooldown / no key).
+
+    Callers treat this as "fall back now": it must never reach the frontend
+    and never trigger another network attempt.
+    """
+
+
+# ── Circuit breaker (in-memory, process-local) ─────────────────────────────
+
+_CIRCUIT: dict = {"unavailable_until": 0.0, "reason": None}
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
+def breaker_state() -> str:
+    """One of ``"closed"`` (available), ``"open"`` (cooldown) or
+    ``"half_open"`` (cooldown elapsed; one probe request allowed)."""
+    until = _CIRCUIT["unavailable_until"]
+    if until <= 0:
+        return "closed"
+    if _now() >= until:
+        return "half_open"
+    return "open"
+
+
+def is_groq_available() -> bool:
+    """True when new Groq requests are allowed right now.
+
+    Guards the JARVIS deterministic layers and the background retry sweep so a
+    cooldown costs zero LLM attempts instead of one per request.
+    """
+    return breaker_state() != "open"
+
+
+def open_breaker(reason: str) -> None:
+    """Mark Groq unavailable for ``GROQ_COOLDOWN_SECONDS`` (idempotent)."""
+    if breaker_state() == "open":
+        return
+    _CIRCUIT["unavailable_until"] = _now() + GROQ_COOLDOWN_SECONDS
+    _CIRCUIT["reason"] = reason
+    logger.error(
+        "Groq quota exhausted. Circuit breaker enabled for %ds. Using local fallback.",
+        int(GROQ_COOLDOWN_SECONDS),
+    )
+
+
+def close_breaker() -> None:
+    """Mark Groq available again (called when a probe request succeeds)."""
+    if _CIRCUIT["unavailable_until"] > 0:
+        logger.info("Groq recovered. Circuit breaker closed - AI back online.")
+    _CIRCUIT["unavailable_until"] = 0.0
+    _CIRCUIT["reason"] = None
+
+
+def reset_breaker_for_tests() -> None:
+    """Test helper: force the breaker back to ``"closed"``."""
+    _CIRCUIT["unavailable_until"] = 0.0
+    _CIRCUIT["reason"] = None
+
+
+def _get_probe_lock() -> asyncio.Lock:
+    """Serializes probe requests so only ONE test request crosses half-open."""
+    loop = asyncio.get_running_loop()
+    if _probe_lock_state["lock"] is None or _probe_lock_state["loop"] is not loop:
+        _probe_lock_state["loop"] = loop
+        _probe_lock_state["lock"] = asyncio.Lock()
+    return _probe_lock_state["lock"]
+
+
+def _acquire_limiter() -> asyncio.Semaphore:
+    """Return the shared concurrency semaphore for the running loop."""
+    loop = asyncio.get_running_loop()
+    if _rate_limit_state["semaphore"] is None or _rate_limit_state["loop"] is not loop:
+        _rate_limit_state["loop"] = loop
+        _rate_limit_state["semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_GROQ_CALLS)
+    return _rate_limit_state["semaphore"]
+
+
+def _error_text(exc: BaseException) -> str:
+    """Text of a provider error incl. the parsed JSON body (no headers/keys)."""
+    text = str(exc) or ""
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict):
+            text = " ".join(
+                part for part in (text, err.get("message"), err.get("type")) if part
+            )
+        else:
+            text = f"{text} {body}"
+    elif body is not None:
+        text = f"{text} {body}"
+    return text
+
+
+def _is_tpd_quota(exc: BaseException) -> bool:
+    """True when a 429 means the DAILY token-per-day quota is exhausted.
+
+    TPD cannot be fixed by retrying a few seconds later (it resets on the next
+    day), so callers must skip retries and trip the circuit breaker instead.
+    """
+    if not isinstance(exc, APIStatusError):
+        return False
+    text = _error_text(exc)
+    if not text:
+        return False
+    if _TPD_RE.search(text):
+        return True
+    if _DAILY_QUOTA_RE.search(text) and re.search(
+        r"\b(?:limit|used|requested|exceeded|exhausted)\b", text, re.IGNORECASE
+    ):
+        return True
+    return False
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """True only for TRANSIENT failures worth one short retry.
+
+    A TPD 429 is deliberately NOT retryable: it is a hard daily-quota error
+    that also trips the circuit breaker.
+    """
+    if isinstance(exc, (APITimeoutError, APIConnectionError)):
+        return True
+    if isinstance(exc, APIStatusError):
+        if exc.status_code == 429:
+            return not _is_tpd_quota(exc)
+        return exc.status_code in _RETRYABLE_STATUSES or exc.status_code >= 500
+    return False
+
+
+def _reasoning_effort_for(model: str) -> str:
+    """Pick a ``reasoning_effort`` the given model actually accepts.
+
+    The primary ``qwen`` model supports ``"none"`` (no thinking block, which is
+    what keeps the output budget tiny). The ``openai/gpt-oss-*`` models reject
+    ``"none"`` with HTTP 400 and only accept ``low``/``medium``/``high`` — so the
+    413 fallback must ask them for ``"low"`` instead.
+    """
+    if "gpt-oss" in model:
+        return "low"
+    return "none"
+
+
+def _is_payload_too_large(exc: BaseException) -> bool:
+    """True when the request itself exceeds the model's input budget (413).
+
+    Groq answers an over-budget request with HTTP 413 and a ``rate_limit_error``
+    body ("Request too large for model ... on tokens per minute (TPM): Limit
+    ..., Requested ..."). Waiting cannot fix it — the request is simply too big
+    — so it must never be retried blindly nor trip the daily-quota breaker; the
+    caller shortens the prompt and, failing that, marks the message terminal.
+    """
+    if getattr(exc, "status_code", None) == 413:
+        return True
+    lowered = _error_text(exc).lower()
+    return "too large" in lowered or "413" in lowered
+
+
+class MessageTooLargeError(Exception):
+    """The request exceeds the model's input budget even after truncation.
+
+    Raised by :meth:`GroqProvider.analyze` only after a shortened retry on the
+    fallback model also failed. Terminal: the caller must NOT retry it.
+    """
+
+
+
+def _retry_wait(exc: BaseException, attempt: int) -> float:
+    """Backoff for one retry attempt, bounded by ``MAX_RETRY_WAIT`` (≤1s).
+
+    Respects Groq's ``Retry-After`` header when present but caps it so we never
+    block for tens of seconds and the user always gets a fallback fast;
+    otherwise exponential backoff from ``INITIAL_RETRY_DELAY``.
+    """
+    wait = INITIAL_RETRY_DELAY * (2 ** attempt)
+    if isinstance(exc, RateLimitError) and exc.response is not None:
+        try:
+            header = exc.response.headers.get("retry-after")
+            if header is not None and float(header) > 0:
+                wait = float(header)
+        except (TypeError, ValueError, AttributeError):
+            pass
+    return min(wait, MAX_RETRY_WAIT)
+
+
+def _apply_circuit_rules(exc: BaseException | None) -> None:
+    """Open the breaker when a final failure is a daily-quota (TPD) error."""
+    if exc is not None and _is_tpd_quota(exc):
+        open_breaker("tokens_per_day")
+
 
 # Single-call analysis prompt: priority + tasks + deadlines + summary +
 # recommended action in ONE response. One message must never cost more
@@ -27,30 +297,31 @@ ANALYSIS_PROMPT = """You are a communication analysis engine. Analyze the messag
 3. WRITE A ONE-SENTENCE SUMMARY
 4. RECOMMEND ONE NEXT ACTION FOR THE RECIPIENT
 
+OUTPUT FORMAT RULES (STRICT):
+- Return ONLY ONE compact JSON object. NEVER include reasoning, chain-of-thought, explanations, markdown, or any text inside or outside the JSON.
+- Every field must be SHORT and concrete. Do not be verbose.
+- "explanation": at most one short sentence (under 15 words).
+- "summary": one sentence, under 20 words.
+- "recommended_action": one verb-first sentence, under 15 words.
+- "tasks_extracted" and "deadlines": use [] when there is nothing to report — never null, never omit.
+
 PRIORITY LEVELS:
 
 URGENT - Requires immediate attention within hours.
-Evidence needed (ANY ONE is enough):
+Evidence needed:
 - Explicit time pressure: "right now", "immediately", "ASAP", "urgent"
 - OR deadline within 24 hours ("tonight", "today", "right now")
-- OR an active outage/disruption: "server down", "production down", "service down",
-  "site down", "outage", "is down", "not working", "blocking", "blocked"
-- OR "action required" / "action needed" combined with a same-day deadline
+- AND clear consequence of delay
 
 IMPORTANT - Requires attention within 1-3 days.
-Evidence needed (ANY ONE is enough):
+Evidence needed:
 - Deadline within 1-7 days ("tomorrow", "this week", "by Friday")
 - OR action required with some consequence of delay
-- OR a meeting/event the recipient must attend, prepare for, or act on —
-  even when scheduled a week away ("meeting rescheduled to next week")
-- OR "action required" without a same-day deadline
 
 NORMAL - Requires attention but not time-sensitive.
 This is the DEFAULT when evidence is ambiguous.
 - No explicit deadline
-- OR purely informational update that needs no action (e.g. an FYI or a
-  reschedule notice the recipient need not prepare for) — this is NOT implied
-  by "next week" alone when the message asks something of the recipient
+- OR deadline more than 7 days away ("next week", "next month")
 - OR action requested but not time-critical
 
 LOW - Minimal or no immediate action needed.
@@ -81,12 +352,10 @@ CRITICAL TASK RULES:
 
 DEADLINE DETECTION:
 - "right now", "ASAP", "immediately" -> deadline: the expression itself, priority: urgent
-- "server down", "production down", "outage", "blocking" -> deadline: the expression itself, priority: urgent
 - "today", "tonight" -> deadline: the expression itself, priority: urgent
 - "tomorrow" -> deadline: "tomorrow", priority: important
 - "this week", "by Friday" -> deadline: the expression itself, priority: important
-- "next week", "next month" -> deadline: the expression itself, priority: important if it
-  is a meeting/event or an action item, otherwise normal
+- "next week", "next month" -> deadline: the expression itself, priority: normal
 - "before the meeting" -> deadline: "before the meeting" (do NOT invent a date)
 - No time expression -> deadline: null
 
@@ -107,8 +376,8 @@ MESSAGE TO ANALYZE:
 {message}
 ---
 
-Return ONLY a JSON object with exactly these fields:
-{{"priority": "urgent", "confidence": 0.9, "explanation": "1-2 sentences", "summary": "one sentence", "tasks_extracted": [{{"description": "...", "deadline": "...", "priority_indicator": "...", "requires_action": true}}], "deadlines": ["..."], "recommended_action": "verb-first sentence"}}"""
+Return ONLY a compact JSON object with exactly these fields (no other keys, no text outside):
+{{"priority": "urgent", "confidence": 0.9, "explanation": "short reason", "summary": "one sentence", "tasks_extracted": [{{"description": "concise action", "deadline": "expression or null", "priority_indicator": "word or null", "requires_action": true}}], "deadlines": ["expression"], "recommended_action": "verb-first sentence"}}"""
 
 VALID_PRIORITIES = {"urgent", "important", "normal", "low"}
 
@@ -136,14 +405,70 @@ def normalize_priority(raw: str) -> str:
 
 
 def clean_response(text: str) -> str:
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = re.sub(r" thinking.*?</think>", "", text, flags=re.DOTALL)
     text = re.sub(r"```json\s*", "", text)
     text = re.sub(r"```\s*$", "", text)
     text = text.strip()
-    json_match = re.search(r"\{.*\}", text, re.DOTALL)
+    json_match = re.search(r"\{.*\}", text, flags=re.DOTALL)
     if json_match:
         return json_match.group(0)
     return text
+
+
+def build_analysis_prompt(
+    message: str,
+    context: list[dict] | None = None,
+    current_message_id: str | None = None,
+    *,
+    aggressive: bool = False,
+) -> str:
+    """Assemble the single analysis prompt inside a safe input-token budget.
+
+    - The current ``message`` is clipped to ``MAX_MESSAGE_TOKENS`` (head kept:
+    ``Subject:`` line + opening body).
+    - The thread context is clipped per message AND in total, so enrichment can
+      never dominate the prompt.
+    - When the assembled prompt would still exceed ``MAX_PROMPT_TOKENS``, the
+      context is dropped and the message is shrunk further.
+
+    For short messages with short context the output is byte-identical to the
+    original ``ANALYSIS_PROMPT.replace("{message}", message)` assembly, so
+    ordinary messages keep getting the full analysis. ``aggressive`` (used for
+    the 413 fallback retry) halves the message budget and drops context.
+    """
+    message_budget = MAX_MESSAGE_TOKENS // 2 if aggressive else MAX_MESSAGE_TOKENS
+    # Clip the current message to its budget FIRST so the head (the
+    # ``Subject:`` line + opening of the body) is what survives; the tail
+    # (quoted reply chains, signatures) is dropped.
+    message = budget_message(message, max_tokens=message_budget)
+
+    context_block: str | None = None
+    if context and not aggressive:
+        # Everything left after the static template and the message may go to
+        # context (the header/rules tokens are counted inside the block).
+        room = MAX_PROMPT_TOKENS - estimate_tokens(ANALYSIS_PROMPT) - estimate_tokens(
+            message
+        )
+        if room > 0:
+            budgeted = budget_context_messages(context, total_tokens=room)
+            block = build_context_block(budgeted, current_message_id)
+            if block and estimate_tokens(block) <= room:
+                context_block = block
+
+    prompt = ANALYSIS_PROMPT
+    if context_block:
+        prompt = prompt.replace(
+            "MESSAGE TO ANALYZE:", context_block + "\n\nMESSAGE TO ANALYZE:"
+        )
+    prompt = prompt.replace("{message}", message)
+
+    # Final guard: if the assembled prompt still exceeds the cap, shrink the
+    # message to fit exactly (keeps the function total under MAX_PROMPT_TOKENS).
+    over = estimate_tokens(prompt) - MAX_PROMPT_TOKENS
+    if over > 0:
+        message = truncate_to_tokens(message, max(1, estimate_tokens(message) - over))
+        prompt = prompt.replace("{message}", message)
+    return prompt
 
 
 class GroqProvider(BaseLLMProvider):
@@ -153,27 +478,114 @@ class GroqProvider(BaseLLMProvider):
         if not api_key:
             logger.error("GROQ_API_KEY is not set! Analysis WILL fail.")
         else:
-            logger.info("GroqProvider initialized with model=%s, key=%s...", self.model, api_key[:8])
+            # NEVER log any part of the API key.
+            logger.info(
+                "GroqProvider initialized with model=%s (API key configured)",
+                self.model,
+            )
+        # Our own bounded retry loop owns the backoff, so the timeout is set
+        # per request (a hung call must not hold a limiter slot forever).
         self.client = AsyncGroq(api_key=api_key)
 
-    async def _complete(self, prompt: str) -> dict:
-        """One LLM call returning parsed JSON. Errors propagate — no
-        silent swallowing here."""
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt + "\n/no_think"}],
-            temperature=0.3,
-            max_tokens=MAX_OUTPUT_TOKENS,
-            # Qwen 3.6 27B reasons by default and burns its whole output
-            # budget (and the Groq OTPM cap) on a "thinking" block that we
-            # never surface. Disable reasoning and ask for strict JSON so
-            # each analysis stays within one small, parseable response.
-            reasoning_effort="none",
-            response_format={"type": "json_object"},
-        )
+    async def _call_once(self, prompt: str, model: str | None = None) -> dict:
+        """A single transport attempt: one API call, parsed JSON result.
+
+        No retries, no circuit logic — just the one call under the shared
+        concurrency cap. Raising here lets ``_complete``/``_probe_once`` apply
+        their retry and breaker policy uniformly. ``model`` overrides the
+        configured model for ONE attempt (used by the oversized-message
+        fallback).
+        """
+        async with _acquire_limiter():
+            response = await self.client.chat.completions.create(
+                timeout=GROQ_TIMEOUT,
+                model=model or self.model,
+                messages=[{"role": "user", "content": prompt + "\n/no_think"}],
+                temperature=0.3,
+                max_tokens=MAX_OUTPUT_TOKENS,
+                # Disable reasoning entirely for classification /
+                # extraction: no chain-of-thought, no long thinking
+                # blocks, minimal output tokens. The JSON answer is
+                # produced directly and stays within budget. The fallback
+                # model rejects "none", so pick per-model.
+                reasoning_effort=_reasoning_effort_for(model or self.model),
+                response_format={"type": "json_object"},
+            )
         raw_content = response.choices[0].message.content
         cleaned = clean_response(raw_content)
         return json.loads(cleaned)
+
+    async def _complete(self, prompt: str, model: str | None = None) -> dict:
+        """One LLM call with circuit-breaker + bounded transient retry.
+
+        Policy (showcase-safe):
+        - breaker OPEN  -> raise ``GroqUnavailableError`` instantly, no API call.
+        - breaker half-open (cooldown elapsed) -> ONE probe request via
+          ``_probe_once``; success closes the breaker, a TPD error re-opens it.
+        - normal (closed) -> one call; a TRANSIENT failure (OTPM 429, 408/409/
+          5xx, connection/timeout) is retried at most once with a ≤1s wait; a
+          TPD 429 is never retried and opens the breaker.
+
+        ``model`` overrides the model for this call (used by the 413 fallback).
+        A 413 ("too large") is not retryable here, so it surfaces immediately
+        for the caller to shorten the prompt.
+        """
+        state = breaker_state()
+        if state == "open":
+            raise GroqUnavailableError(
+                "Groq is in cooldown after a quota error; using local fallback."
+            )
+        if state == "half_open":
+            return await self._probe_once(prompt, model=model)
+
+        last_error: BaseException | None = None
+        for attempt in range(RETRY_ATTEMPTS):
+            try:
+                return await self._call_once(prompt, model=model)
+            except Exception as exc:
+                last_error = exc
+                if not _is_retryable(exc) or attempt + 1 >= RETRY_ATTEMPTS:
+                    break
+                wait = _retry_wait(exc, attempt)
+                logger.warning(
+                    "Groq API transient failure on attempt %d/%d (%s): retrying in %.2fs",
+                    attempt + 1,
+                    RETRY_ATTEMPTS,
+                    type(exc).__name__,
+                    wait,
+                )
+                await asyncio.sleep(wait)
+        _apply_circuit_rules(last_error)
+        raise last_error
+
+    async def _probe_once(self, prompt: str, model: str | None = None) -> dict:
+        """Single test request allowed after the cooldown elapsed.
+
+        Guarded by a per-loop lock so only ONE probe crosses while half-open;
+        other arrivals wait and then either observe a recovered (closed)
+        breaker or fail fast on a re-opened one.
+        """
+        async with _get_probe_lock():
+            if breaker_state() == "open":
+                raise GroqUnavailableError(
+                    "Groq is in cooldown after a quota error; using local fallback."
+                )
+            try:
+                result = await self._call_once(prompt, model=model)
+                close_breaker()
+                return result
+            except Exception as exc:
+                last_error: BaseException = exc
+                if not _is_tpd_quota(exc) and _is_retryable(exc):
+                    await asyncio.sleep(_retry_wait(exc, 0))
+                    try:
+                        result = await self._call_once(prompt, model=model)
+                        close_breaker()
+                        return result
+                    except Exception as exc2:
+                        last_error = exc2
+                _apply_circuit_rules(last_error)
+                raise last_error
 
     async def analyze(
         self,
@@ -181,16 +593,46 @@ class GroqProvider(BaseLLMProvider):
         context: list[dict] | None = None,
         current_message_id: str | None = None,
     ) -> AIAnalysisResult:
-        # NOTE: .replace, NOT .format — messages may contain braces.
-        prompt = ANALYSIS_PROMPT
-        block = build_context_block(context, current_message_id) if context else None
-        if block:
-            prompt = prompt.replace(
-                "MESSAGE TO ANALYZE:", block + "\n\nMESSAGE TO ANALYZE:"
+        # The prompt is assembled inside a safe input-token budget so a long
+        # email + thread context can never blow past the free-tier ITPM cap.
+        prompt = build_analysis_prompt(message, context, current_message_id)
+        try:
+            result = await self._complete(prompt)
+        except MessageTooLargeError:
+            raise
+        except Exception as exc:
+            if not _is_payload_too_large(exc):
+                raise
+            # 413: the request is too big for this model. Retry ONCE on the
+            # small/fast fallback model with a shorter prompt (half message,
+            # no context). If even that is too large, the message is terminal.
+            logger.warning(
+                "Groq 413 payload too large (%d-char message); retrying once on "
+                "%s with a shortened prompt",
+                len(message),
+                FALLBACK_MODEL,
             )
-        prompt = prompt.replace("{message}", message)
-
-        result = await self._complete(prompt)
+            shorter = build_analysis_prompt(
+                message, context, current_message_id, aggressive=True
+            )
+            try:
+                result = await self._complete(shorter, model=FALLBACK_MODEL)
+            except Exception as exc2:
+                # The primary said the request is too large AND the rescue on
+                # the fallback model did not succeed (still 413, or the model
+                # is unavailable/403/404, etc.). Neither retrying nor the
+                # circuit breaker can fix this, so surface a TERMINAL error so
+                # the message is marked failed instead of looping as pending.
+                logger.error(
+                    "Groq oversized-message fallback failed on %s: %s",
+                    FALLBACK_MODEL,
+                    _error_text(exc2)[:200],
+                )
+                raise MessageTooLargeError(
+                    "Message exceeds the AI input limit and the fallback model "
+                    f"({FALLBACK_MODEL}) could not analyze it: "
+                    f"{_error_text(exc2)[:200]}"
+                ) from exc2
 
         priority = normalize_priority(str(result.get("priority", "normal")))
         confidence = result.get("confidence", 0.5)
@@ -235,6 +677,25 @@ class GroqProvider(BaseLLMProvider):
         with open(path, "r", encoding="utf-8") as f:
             return f.read()
 
+    async def chat(self, prompt: str) -> dict:
+        """One-shot assistant chat completion returning parsed JSON (JARVIS).
+
+        Reuses ``_complete`` (the transport/JSON handling above) so API-key
+        handling, model selection, reasoning control, circuit breaking and
+        output-token budgeting stay in one place. The caller composes a prompt
+        that asks for a ``{"reply": "..."}`` JSON object and reads
+        ``result["reply"]``. Always returns a dict (``{}`` on any failure) and
+        NEVER re-throws: callers degrade to their deterministic fallback.
+        """
+        try:
+            return await self._complete(prompt)
+        except Exception as exc:
+            logger.warning(
+                "JARVIS chat completion failed, using fallback: %s",
+                _error_text(exc)[:200],
+            )
+            return {}
+
     async def generate_summary(self, message_content: str) -> str | None:
         """Legacy standalone call. The pipeline no longer uses this —
         kept only for backward compatibility."""
@@ -243,8 +704,8 @@ class GroqProvider(BaseLLMProvider):
             prompt = prompt_template.replace("{message}", message_content)
             result = await self._complete(prompt)
             return result.get("summary")
-        except Exception as e:
-            logger.error("Summary generation failed: %s", e, exc_info=True)
+        except Exception as exc:
+            logger.warning("Summary generation failed: %s", _error_text(exc)[:200])
             return None
 
     async def generate_recommendation(self, message_content: str) -> str:
@@ -255,6 +716,6 @@ class GroqProvider(BaseLLMProvider):
             prompt = prompt_template.replace("{message}", message_content)
             result = await self._complete(prompt)
             return result.get("recommended_action", "")
-        except Exception as e:
-            logger.error("Recommendation generation failed: %s", e, exc_info=True)
+        except Exception as exc:
+            logger.warning("Recommendation generation failed: %s", _error_text(exc)[:200])
             return ""

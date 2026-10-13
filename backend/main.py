@@ -18,6 +18,7 @@ from routes.connections import router as connections_router
 from routes.gmail import router as gmail_router, google_router
 from routes.analytics import router as analytics_router
 from routes.jarvis import router as jarvis_router
+from routes.ws import router as ws_router
 from routes.test import router as test_router  # TEMPORARY - for load testing
 
 load_dotenv()
@@ -155,7 +156,12 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
-
+@app.get("/testdb")
+async def test_db():
+    ping_result = await users_collection.database.command("ping")
+    if ping_result.get("ok") != 1:
+        return {"message": "Database is not accessible", "ping_result": ping_result}
+    return {"message": "Database is accessible", "ping_result": ping_result}
 
 
 app.include_router(auth_router)
@@ -167,4 +173,5 @@ app.include_router(gmail_router)
 app.include_router(google_router)
 app.include_router(analytics_router)
 app.include_router(jarvis_router)
+app.include_router(ws_router)
 app.include_router(test_router)  # TEMPORARY - for load testing

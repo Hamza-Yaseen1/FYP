@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getTasks, completeTask, snoozeTask } from "@/lib/api/tasks";
+import { useRealtime } from "@/components/RealtimeProvider";
 import TaskCard from "./TaskCard";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 
@@ -24,6 +25,7 @@ export default function TaskList({ refreshKey }: { refreshKey?: number }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const { version } = useRealtime();
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +42,7 @@ export default function TaskList({ refreshKey }: { refreshKey?: number }) {
     return () => {
       cancelled = true;
     };
-  }, [refreshKey]);
+  }, [refreshKey, version]);
 
   const handleComplete = useCallback(async (taskId: string) => {
     await completeTask(taskId);

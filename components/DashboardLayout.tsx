@@ -2,6 +2,7 @@ import AuroraBackdrop from "@/components/AuroraBackdrop";
 import Sidebar from "@/components/Sidebar";
 import Navbar from "@/components/Navbar";
 import SignalLine from "@/components/SignalLine";
+import { RealtimeProvider } from "@/components/RealtimeProvider";
 import JarvisAssistant from "@/components/jarvis/JarvisAssistant";
 
 export default function DashboardLayout({
@@ -22,7 +23,9 @@ export default function DashboardLayout({
       <div className="relative z-10 flex flex-1 flex-col overflow-hidden">
         <Navbar />
         <SignalLine />
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="flex-1 overflow-y-auto">
+          <RealtimeProvider>{children}</RealtimeProvider>
+        </main>
       </div>
 
       {/* Persist JARVIS across dashboard routes */}

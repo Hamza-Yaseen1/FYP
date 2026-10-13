@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import NeedsAttentionCard from "@/components/NeedsAttentionCard";
+import { useRealtime } from "@/components/RealtimeProvider";
 import { apiFetch } from "@/lib/api";
 
 interface AttentionMessage {
@@ -34,6 +35,7 @@ export default function NeedsAttentionSection({
 }) {
   const [messages, setMessages] = useState<AttentionMessage[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const { version } = useRealtime();
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +52,7 @@ export default function NeedsAttentionSection({
     return () => {
       cancelled = true;
     };
-  }, [refreshKey]);
+  }, [refreshKey, version]);
 
   const flagged = messages.filter((m) => m.ai_analysis?.needs_attention);
 
