@@ -15,6 +15,7 @@ from models.message import (
 from services.threads import resolve_and_stamp
 from services.webhook_ingest import _analyze_and_store, build_analysis_text
 from services.ai import process_message
+from services.realtime import MESSAGE_CREATED, MESSAGE_UPDATED, emit_message_event
 from services.retry_pending import reanalyze_user_pending
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,8 @@ async def create_message(
 
     result = await messages_collection.insert_one(doc)
     message_id = str(result.inserted_id)
+
+    await emit_message_event(uid, MESSAGE_CREATED, message_id)
 
     background_tasks.add_task(
         _analyze_and_store, payload.content, message_id, uid, thread_id
@@ -129,6 +132,8 @@ async def reanalyze_message(
         {"_id": ObjectId(message_id), "user_id": uid},
         {"$set": {"ai_analysis": analysis}},
     )
+
+    await emit_message_event(uid, MESSAGE_UPDATED, message_id)
 
     updated = await messages_collection.find_one(
         {"_id": ObjectId(message_id), "user_id": uid}
@@ -387,4 +392,5 @@ async def override_priority(
     if not result:
         raise HTTPException(status_code=404)
 
+    await emit_message_event(uid, MESSAGE_UPDATED, message_id)
     return message_doc_to_response(result)

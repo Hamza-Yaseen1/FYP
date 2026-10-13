@@ -468,6 +468,32 @@ def test_get_provider_failure_still_attaches_routing(monkeypatch):
     assert failed["status"] == "pending"
     assert failed["routing"]["llm_call_used"] is True
     assert failed["routing"]["skip_reason"] == "full"
+
+
+class _TooLargeProvider:
+    async def analyze(self, message, context=None, current_message_id=None):
+        from services.ai.providers.groq import MessageTooLargeError
+
+        raise MessageTooLargeError("request too large even after truncation")
+
+
+def test_oversized_message_is_terminal_failed_not_pending(monkeypatch):
+    """A 413-class failure can never be fixed by retrying: it must be stored
+    ``failed`` (terminal) so the retry sweep ignores it — unlike a transient
+    provider outage, which stays ``pending``."""
+    monkeypatch.setattr(
+        "services.ai.analyzer.get_provider", lambda: _TooLargeProvider()
+    )
+
+    failed = asyncio.run(
+        process_message(
+            "x" * 20000, message_id="msg-toolarge", user_id="user-test"
+        )
+    )
+    assert failed["status"] == "failed"
+    assert failed["routing"]["llm_call_used"] is True
+
+
 def test_provider_uses_reasoning_effort_none(monkeypatch):
     """The Groq call MUST disable reasoning: Qwen 3.6 27B burns its output
     budget on a thinking block otherwise, which trips the OTPM 429 guard and

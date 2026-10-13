@@ -20,6 +20,7 @@ from .context import (
     fetch_thread_context,
     validate_context_updates,
 )
+from .providers.groq import is_groq_available
 from .routing import RoutingDecision, decide_routing
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,34 @@ def _deterministic_defaults(
     }
 
 
+def _cooldown_fallback(routing: RoutingDecision) -> dict:
+    """Stored ``pending`` result for a message that arrived during a cooldown.
+
+    While the Groq circuit breaker is OPEN the pipeline cannot produce an
+    analysis, so the message is stored as ``pending`` (visible in the
+    Dashboard and picked up by the retry sweep once Groq recovers). This path
+    is deliberately SILENT: no provider is constructed, no thread context is
+    fetched and nothing is logged per message, because an exhausted daily
+    quota would otherwise fill the log with one line per inbound message.
+    """
+    return {
+        "priority": "normal",
+        "confidence": 0.0,
+        "explanation": "Analysis deferred until the AI provider recovers",
+        "summary": None,
+        "recommended_action": "",
+        "recommended_actions": [],
+        "tasks_extracted": [],
+        "deadlines": [],
+        "needs_attention": False,
+        "attention_reason": "",
+        "provider": "groq",
+        "analyzed_at": None,
+        "status": "pending",
+        "routing": _routing_record(routing, llm_call_used=True),
+    }
+
+
 async def process_message(
     content: str,
     message_id: str = None,
@@ -127,6 +156,9 @@ async def process_message(
 
     if not routing.needs_analysis or not routing.needs_llm:
         return _deterministic_defaults(routing, message_type, content)
+
+    if not is_groq_available():
+        return _cooldown_fallback(routing)
 
     context_messages = await _fetch_context(
         user_id=user_id, thread_id=thread_id, exclude_message_id=message_id

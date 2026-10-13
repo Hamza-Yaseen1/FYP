@@ -8,6 +8,7 @@ import MessageList from "@/components/MessageList";
 import NeedsAttentionSection from "@/components/NeedsAttentionSection";
 import SimulateMessage from "@/components/SimulateMessage";
 import BulkTestButton from "@/components/BulkTestButton"; // TEMPORARY - for load testing
+import { useRealtime } from "@/components/RealtimeProvider";
 import { Button } from "@/components/ui/button";
 import { apiFetch, clearCache } from "@/lib/api";
 
@@ -56,6 +57,9 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState<string>("User");
   const [counts, setCounts] = useState<Counts | null>(null);
   const [suggestionCount, setSuggestionCount] = useState(0);
+  const { version } = useRealtime();
+  // Local actions bump `refreshKey`; realtime events bump `version`.
+  const effectiveKey = refreshKey + version;
 
   // Fetch current user
   useEffect(() => {
@@ -77,7 +81,7 @@ export default function DashboardPage() {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [refreshKey]);
+  }, [effectiveKey]);
 
   // Fetch inbox rollups (counts + AI suggestion count)
   useEffect(() => {
@@ -99,7 +103,7 @@ export default function DashboardPage() {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [refreshKey]);
+  }, [effectiveKey]);
 
   const markDone = async (taskId: string) => {
     try {
@@ -240,7 +244,7 @@ export default function DashboardPage() {
           <h2 className="triage-label text-muted-foreground">Needs your attention</h2>
         </div>
         <NeedsAttentionSection
-          refreshKey={refreshKey}
+          refreshKey={effectiveKey}
           title=""
           emptyMessage="No items need your attention right now — all quiet."
         />
@@ -251,7 +255,7 @@ export default function DashboardPage() {
         <div className="mb-4">
           <h2 className="triage-label text-muted-foreground">Recent messages</h2>
         </div>
-        <MessageList refreshKey={refreshKey} />
+        <MessageList refreshKey={effectiveKey} />
       </GlassCard>
 
       {/* Simulate message */}

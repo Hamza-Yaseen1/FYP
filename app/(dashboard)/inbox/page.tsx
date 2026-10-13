@@ -12,6 +12,7 @@ import EmptyState from "@/components/EmptyState";
 import LoadingSkeleton from "@/components/LoadingSkeleton";
 import PriorityBadge from "@/components/PriorityBadge";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { useRealtime } from "@/components/RealtimeProvider";
 import { apiFetch, clearCache } from "@/lib/api";
 
 interface Message {
@@ -93,6 +94,7 @@ function InboxPageInner() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [showClearInbox, setShowClearInbox] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const { version } = useRealtime();
 
   // Debounced search: the actual query sent to the API lags behind the
   // input value by INBOX_DEBOUNCE_MS to avoid fire-hosing the backend on
@@ -131,7 +133,7 @@ function InboxPageInner() {
 
   useEffect(() => {
     loadMeta();
-  }, [loadMeta]);
+  }, [loadMeta, version]);
 
   // Fetch messages whenever filters change (debounced search used here).
   useEffect(() => {
@@ -163,7 +165,7 @@ function InboxPageInner() {
     }
     load();
     return () => { cancelled = true; };
-  }, [activeTab, selectedSource, selectedPriority, selectedSender, startDate, endDate, debouncedSearch, refreshKey]);
+  }, [activeTab, selectedSource, selectedPriority, selectedSender, startDate, endDate, debouncedSearch, refreshKey, version]);
 
   // Cleanup debounce timer on unmount.
   useEffect(() => {

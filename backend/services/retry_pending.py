@@ -32,6 +32,8 @@ from bson import ObjectId
 
 from database import messages_collection
 from services.ai import process_message
+from services.ai.providers.groq import is_groq_available
+from services.realtime import MESSAGE_UPDATED, emit_message_event
 from services.webhook_ingest import build_analysis_text
 
 logger = logging.getLogger(__name__)
@@ -108,14 +110,31 @@ async def _reanalyze_pending(
             )
             analysis = {"status": "pending"}
 
-        if analysis.get("status") == "completed":
+        if analysis.get("status") in ("completed", "failed", "skipped"):
+            # Terminal result: persist it so the document leaves the
+            # ``{"ai_analysis.status": "pending"}`` selector. A ``failed`` here
+            # is an oversized message (413) that no retry can fix — persisting
+            # it is what stops the endless 413 loop.
             await messages_collection.update_one(
                 {"_id": ObjectId(message_id), "user_id": user_id},
                 {"$set": {"ai_analysis": analysis}},
             )
-            completed += 1
-            consecutive_failures = 0
-            logger.info("Pending analysis completed for message %s", message_id)
+            await emit_message_event(user_id, MESSAGE_UPDATED, message_id)
+            if analysis.get("status") == "completed":
+                completed += 1
+                consecutive_failures = 0
+                logger.info("Pending analysis completed for message %s", message_id)
+            else:
+                failed += 1
+                # Terminal, not a provider outage: do not count it toward the
+                # early-stop guard, so one oversized message cannot stall the
+                # rest of the queue.
+                consecutive_failures = 0
+                logger.info(
+                    "Pending analysis resolved as terminal '%s' for message %s",
+                    analysis.get("status"),
+                    message_id,
+                )
         else:
             logger.warning(
                 "Pending message %s still unresolved after retry; leaving pending",
@@ -147,7 +166,19 @@ async def retry_pending_analyses(limit: int = 10) -> dict:
 
     Bounded per cycle so a full drain cannot trip the provider quota; the
     next 60s cycle continues where this one stopped.
+
+    When the Groq circuit breaker is OPEN (e.g. the daily quota is exhausted)
+    the sweep returns 0 immediately without touching the database or the
+    provider: retrying now would only hammer an exhausted API and spam 429
+    logs. The messages stay ``pending`` and the next cycle (after the
+    cooldown) retries them in one controlled pass.
     """
+    if not is_groq_available():
+        logger.info(
+            "Groq unavailable (circuit breaker open); skipping pending-analysis retry."
+        )
+        return 0
+
     return await _reanalyze_pending(
         {"ai_analysis.status": "pending"},
         limit=limit,

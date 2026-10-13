@@ -96,10 +96,7 @@ pip install -r requirements.txt
 
 # Configure environment variables
 cp .env.example .env
-# Edit .env with your settings:
-# - JWT_SECRET
-# - MONGODB_URL
-# - GROQ_API_KEY
+# Edit .env with your settings (see the Environment Variables section below).
 ```
 
 Start the backend server:
@@ -188,12 +185,32 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 ### Backend
-Create `backend/.env`:
+Create `backend/.env` (a template with every variable is in `backend/.env.example`):
 ```env
 JWT_SECRET=your-super-secret-key-here
-MONGODB_URL=mongodb://localhost:27017/communication_ai
+MONGO_URI=mongodb://localhost:27017
+DB_NAME=communication_ai
 GROQ_API_KEY=your-groq-api-key
 ```
+
+Groq resilience variables (all optional — the defaults are showcase-safe, so
+the app never blocks or hangs on AI):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GROQ_MODEL` | `qwen/qwen3.8-27b` | Model for analysis + JARVIS |
+| `GROQ_MAX_OUTPUT_TOKENS` | `400` | Keep low to avoid the free-tier per-minute (OTPM) 429 |
+| `GROQ_MAX_CONCURRENT` | `2` | Cap on simultaneous Groq calls |
+| `GROQ_TIMEOUT` | `30` | Per-request timeout in seconds |
+| `GROQ_RETRY_ATTEMPTS` | `2` | Transient-failure retries (max one retry) |
+| `GROQ_INITIAL_RETRY_DELAY` | `0.3` | Backoff start in seconds |
+| `GROQ_MAX_RETRY_WAIT` | `1.0` | Hard cap per retry wait (in seconds) |
+| `GROQ_COOLDOWN_SECONDS` | `600` | Circuit-breaker cooldown after a daily-quota (TPD) 429 |
+
+When Groq's daily token quota is exhausted, the circuit breaker opens: no more
+attempts are made for the cooldown, message analysis is stored as pending and
+retried later, and JARVIS answers deterministically from your data — the
+showcase never shows a 429 or "AI unavailable" screen.
 
 ---
 

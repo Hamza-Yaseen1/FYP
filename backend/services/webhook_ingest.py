@@ -10,6 +10,7 @@ from pymongo.errors import DuplicateKeyError
 
 from database import messages_collection
 from services.ai import process_message
+from services.realtime import MESSAGE_CREATED, MESSAGE_UPDATED, emit_message_event
 from services.threads import resolve_and_stamp
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,10 @@ async def _analyze_and_store(
         )
     except Exception as exc:
         logger.warning("Failed to persist ai_analysis for %s: %s", message_id, exc)
+        return
+
+    # Notify the dashboard that the analysis landed (best-effort).
+    await emit_message_event(user_id, MESSAGE_UPDATED, message_id)
 
 
 async def ingest_message(
@@ -144,6 +149,9 @@ async def ingest_message(
             external_message_id,
         )
         return str(existing["_id"])
+
+    # Notify the dashboard a new message arrived (best-effort, never blocks).
+    await emit_message_event(user_id, MESSAGE_CREATED, message_id)
 
     if background_tasks is not None:
         background_tasks.add_task(
