@@ -132,12 +132,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Communication AI Backend", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+cors_origins = (
+    [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+    if allowed_origins_env
+    else [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-    ],
+        "https://fyp-omega-peach.vercel.app",
+    ]
+)
+if "https://fyp-omega-peach.vercel.app" not in cors_origins:
+    cors_origins.append("https://fyp-omega-peach.vercel.app")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
