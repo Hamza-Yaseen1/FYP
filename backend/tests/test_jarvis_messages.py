@@ -231,6 +231,7 @@ class TestDetectMessageIntentUnit:
     @pytest.mark.parametrize(
         "message",
         [
+            "important messages",
             "which messages are important?",
             "are there any important messages?",
             "what's important in my inbox?",
@@ -245,6 +246,7 @@ class TestDetectMessageIntentUnit:
     @pytest.mark.parametrize(
         "message",
         [
+            "urgent messages",
             "which messages are urgent?",
             "are there any urgent messages?",
             "show me the urgent ones",
@@ -254,13 +256,28 @@ class TestDetectMessageIntentUnit:
         assert self._intent(message) == "URGENT_MESSAGES"
 
     @pytest.mark.parametrize(
+        "message,priority",
+        [
+            ("how many urgent messages?", "urgent"),
+            ("how many important messages?", "important"),
+        ],
+    )
+    def test_priority_count_phrasings(self, message, priority):
+        from services.ai.jarvis_messages import detect_message_intent
+
+        intent = detect_message_intent(message)
+        assert intent == {
+            "intent": "MESSAGE_COUNT",
+            "params": {"priority": priority},
+        }
+
+    @pytest.mark.parametrize(
         "message",
         [
             "how many unread messages do I have?",
             "show my unread messages",
             "summarize my unread messages",
             "show my important messages",
-            "show my urgent messages",
             "what are the important messages?",
             "why is this message important?",
             "why are urgent messages marked?",
@@ -306,6 +323,8 @@ class TestMessageIntentEndpoint:
         assert data["used_ai"] is False
         assert "You have 3 messages in your inbox." in data["reply"]
         assert "2 are unread." in data["reply"]
+        assert "important" not in data["reply"]
+        assert "urgent" not in data["reply"]
 
     def test_message_count_zero(self, client):
         self._authed(client)
@@ -332,7 +351,7 @@ class TestMessageIntentEndpoint:
         assert "You received 2 messages today." in reply
         assert "Boss" in reply and "Review" in reply
         assert "Calm" in reply
-        assert "1 important" in reply
+        assert reply.splitlines()[0] == "You received 2 messages today. 2 unread."
         assert "1. " in reply  # actual listed content
 
     def test_today_listing_zero_keeps_phase3_wording(self, client, sync_db):
@@ -429,8 +448,8 @@ class TestMessageIntentEndpoint:
 
         res = _chat(client, "which messages are important?")
         reply = res.json()["reply"]
-        assert "2 messages marked important or urgent" in reply
-        assert "VIP" in reply
+        assert "1 important message:" in reply
+        assert "VIP" not in reply
         assert "Boss" in reply
         assert "Noise" not in reply
 
@@ -453,7 +472,43 @@ class TestMessageIntentEndpoint:
         res = _chat(client, "which messages are urgent?")
         assert "No messages are currently marked urgent." in res.json()["reply"]
         res = _chat(client, "which messages are important?")
-        assert "No messages are currently marked important or urgent." in res.json()["reply"]
+        assert "No messages are currently marked important." in res.json()["reply"]
+
+    def test_priority_counts_and_lists_are_separate(self, client, sync_db):
+        uid = self._authed(client)
+        now = datetime.now(timezone.utc)
+        _seed_message(
+            sync_db, uid, sender="Urgent Sender", priority="urgent",
+            status="read", when=now,
+        )
+        _seed_message(
+            sync_db, uid, sender="Important Sender", priority="important",
+            when=now,
+        )
+        _seed_message(
+            sync_db, uid, sender="Normal Sender", priority="normal", when=now,
+        )
+
+        urgent_count = _chat(client, "how many urgent messages?").json()["reply"]
+        assert urgent_count == "You have 1 urgent message."
+
+        important_count = _chat(client, "how many important messages?").json()["reply"]
+        assert important_count == "You have 1 important message."
+
+        urgent_list = _chat(client, "urgent messages").json()["reply"]
+        assert "You have 1 urgent message:" in urgent_list
+        assert "Urgent Sender" in urgent_list
+        assert "Important Sender" not in urgent_list
+
+        important_list = _chat(client, "important messages").json()["reply"]
+        assert "You have 1 important message:" in important_list
+        assert "Important Sender" in important_list
+        assert "Urgent Sender" not in important_list
+
+        both = _chat(client, "urgent and important messages").json()["reply"]
+        assert "2 messages marked important or urgent" in both
+        assert "Urgent Sender" in both
+        assert "Important Sender" in both
 
     def test_isolation_other_users_messages_invisible(self, client, sync_db):
         uid_a = self._authed(client, "jarvis-msg-a@test.com")

@@ -142,8 +142,8 @@ KEYWORD_SEARCH_RE = [
 TRAILING_TOPIC_RE = re.compile(r"\s+(?:about|regarding|concerning|mentioning)\s+.*$")
 
 IMPORTANT_MESSAGES_RE = re.compile(
-    r"(?:show|list|display|get|give|fetch|what are)\b.{0,25}"
-    r"\b(?:important|urgent|high[-\s]?priority)\b.{0,25}\bmessages?\b"
+    r"^(?!.*\burgent\b)(?:show|list|display|get|give|fetch|what are)\b.{0,25}"
+    r"\bimportant\b.{0,25}\bmessages?\b"
 )
 
 COMPLETED_TASKS_RE = re.compile(
@@ -842,21 +842,21 @@ async def _execute_delete_messages(user_id: str, params: dict) -> dict:
 async def run_list_important_messages(user_id: str) -> dict:
     docs = (
         await messages_collection.find(
-            {"user_id": user_id, "ai_analysis.priority": {"$in": ["urgent", "important"]}}
+            {"user_id": user_id, "ai_analysis.priority": "important"}
         )
         .sort("created_at", -1)
         .to_list(length=10)
     )
     if not docs:
         return {
-            "reply": "No important or urgent messages are currently flagged.",
+            "reply": "No messages are currently marked important.",
             "action": {"type": "get_data", "detail": {"list": "important_messages", "count": 0}},
             "used_ai": False,
         }
     bites = _message_bites(docs[:3])
     extra = f"\n…and {len(docs) - 3} more." if len(docs) > 3 else ""
     return {
-        "reply": f"You have {len(docs)} important or urgent message{'' if len(docs) == 1 else 's'}:\n"
+        "reply": f"You have {len(docs)} important message{'' if len(docs) == 1 else 's'}:\n"
         + "\n".join(f"• {b}" for b in bites)
         + extra,
         "action": {"type": "get_data", "detail": {"list": "important_messages", "count": len(docs)}},

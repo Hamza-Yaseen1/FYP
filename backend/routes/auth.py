@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from database import users_collection
+import os
 from dependencies import get_current_user
 from models.user import UserCreate, UserLogin, user_doc_to_response
 from services.security import (
@@ -23,7 +24,7 @@ def _set_session_cookie(response: Response, token: str) -> None:
         max_age=TOKEN_EXPIRY_DAYS * 24 * 3600,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
         path="/",
     )
 
@@ -78,5 +79,5 @@ async def logout(response: Response):
         path="/",
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
     )

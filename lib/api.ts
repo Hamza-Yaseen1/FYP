@@ -54,16 +54,32 @@ function cachedGet<T>(key: string, path: string, options?: RequestInit): Promise
     ...options,
   })
     .then(async (res) => {
-      if (res.status === 401 && typeof window !== "undefined") {
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-        window.location.assign("/login");
-        throw new ApiError(401, "Not authenticated");
-      }
       let data: unknown = null;
       const text = await res.text();
       if (text) {
-        try { data = JSON.parse(text); } catch { data = null; }
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = null;
+        }
       }
+
+      if (res.status === 401 && typeof window !== "undefined") {
+        const isAuthEndpoint =
+          path.startsWith("/auth/login") || path.startsWith("/auth/register");
+
+        if (!isAuthEndpoint) {
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+          window.location.assign("/login");
+        }
+
+        const detail =
+          data && typeof data === "object" && "detail" in data
+            ? String((data as { detail: unknown }).detail)
+            : "Not authenticated";
+        throw new ApiError(401, detail);
+      }
+
       if (!res.ok) {
         const detail =
           data && typeof data === "object" && "detail" in data
@@ -71,6 +87,7 @@ function cachedGet<T>(key: string, path: string, options?: RequestInit): Promise
             : `Request failed with status ${res.status}`;
         throw new ApiError(res.status, detail);
       }
+
       cache.set(key, { data, expiresAt: Date.now() + ttl });
       return data as T;
     })
@@ -116,15 +133,6 @@ export async function apiFetch<T = unknown>(
     ...rest,
   });
 
-  if (res.status === 401 && typeof window !== "undefined") {
-    // Full page navigation is intentional: it clears all cached client
-    // state after session loss. This module sits outside React context,
-    // so useRouter is unavailable here.
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.assign("/login");
-    throw new ApiError(401, "Not authenticated");
-  }
-
   let data: unknown = null;
   const text = await res.text();
   if (text) {
@@ -133,6 +141,22 @@ export async function apiFetch<T = unknown>(
     } catch {
       data = null;
     }
+  }
+
+  if (res.status === 401 && typeof window !== "undefined") {
+    const isAuthEndpoint =
+      path.startsWith("/auth/login") || path.startsWith("/auth/register");
+
+    if (!isAuthEndpoint) {
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.assign("/login");
+    }
+
+    const detail =
+      data && typeof data === "object" && "detail" in data
+        ? String((data as { detail: unknown }).detail)
+        : "Not authenticated";
+    throw new ApiError(401, detail);
   }
 
   if (!res.ok) {

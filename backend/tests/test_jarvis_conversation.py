@@ -349,8 +349,9 @@ class TestContextFollowUps(_AuthedMixin):
         assert "3 messages in your inbox" in step1["reply"]
 
         step2 = _chat(client, "Which ones are important?").json()
-        assert "marked important or urgent" in step2["reply"]
-        assert "2 messages" in step2["reply"]
+        assert "1 important message" in step2["reply"]
+        assert "Today B" in step2["reply"]
+        assert "Yday Sender" not in step2["reply"]
 
         step3 = _chat(client, "What about yesterday?").json()
         assert "1 message yesterday" in step3["reply"]
@@ -385,7 +386,7 @@ class TestContextFollowUps(_AuthedMixin):
         assert AVAILABILITY_UNIQUE in bare["reply"]
 
         important = _chat(client, "Which ones are important?").json()
-        assert "No messages are currently marked important or urgent" in important["reply"]
+        assert "No messages are currently marked important" in important["reply"]
         assert "Secret Sender" not in important["reply"]
 
     def test_unrelated_question_resets_context(self, client, sync_db):

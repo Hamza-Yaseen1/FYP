@@ -295,7 +295,9 @@ class TestSummaryFollowUpChain:
         )
 
         step1 = _chat(client, "Show my important messages.").json()
-        assert "2 important or urgent messages" in step1["reply"]
+        assert "1 important message" in step1["reply"]
+        assert "Urgent Sender" not in step1["reply"]
+        assert "Important Sender" in step1["reply"]
 
         step2 = _chat(client, "Which ones are urgent?").json()
         assert "1 urgent message" in step2["reply"]
