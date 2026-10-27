@@ -7,7 +7,8 @@ export async function POST() {
     const cookieStore = await cookies();
     const token = cookieStore.get("cai_token");
     
-    await fetch("http://localhost:8000/auth/logout", {
+    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+    await fetch(`${backendUrl}/auth/logout`, {
       method: "POST",
       credentials: "include",
       headers: {
