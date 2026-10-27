@@ -6,7 +6,7 @@ export default function HealthBadge() {
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
 
   useEffect(() => {
-    fetch("/api/health")
+    fetch("http://localhost:8000/health")
       .then((res) => res.json())
       .then((data) => setStatus(data.status === "ok" ? "ok" : "error"))
       .catch(() => setStatus("error"));

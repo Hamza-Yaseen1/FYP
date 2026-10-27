@@ -18,13 +18,18 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
+    cookie_secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+    cookie_samesite = os.getenv("COOKIE_SAMESITE", "lax" if not cookie_secure else "none").lower()
+    # For cross-site cookies, SameSite=None requires Secure=True
+    if cookie_samesite == "none":
+        cookie_secure = True
     response.set_cookie(
         key=TOKEN_COOKIE_NAME,
         value=token,
         max_age=TOKEN_EXPIRY_DAYS * 24 * 3600,
         httponly=True,
-        samesite="lax",
-        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
+        samesite=cookie_samesite,
+        secure=cookie_secure,
         path="/",
     )
 
@@ -74,10 +79,14 @@ async def me(current_user: dict = Depends(get_current_user)):
 async def logout(response: Response):
     # No auth required: the cookie must be cleared even when the token
     # is expired or invalid, otherwise the user can never sign out.
+    cookie_secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+    cookie_samesite = os.getenv("COOKIE_SAMESITE", "lax" if not cookie_secure else "none").lower()
+    if cookie_samesite == "none":
+        cookie_secure = True
     response.delete_cookie(
         key=TOKEN_COOKIE_NAME,
         path="/",
         httponly=True,
-        samesite="lax",
-        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
+        samesite=cookie_samesite,
+        secure=cookie_secure,
     )
