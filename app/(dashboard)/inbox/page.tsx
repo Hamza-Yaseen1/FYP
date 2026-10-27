@@ -267,7 +267,7 @@ function InboxPageInner() {
         )}
       </div>
 
-      <GlassCard className="mt-6 space-y-4 p-4 sm:p-5">
+      <GlassCard className="relative z-10 mt-6 space-y-4 p-4 sm:p-5">
         <InboxTabs
           tabs={tabsWithCounts}
           activeTab={activeTab}

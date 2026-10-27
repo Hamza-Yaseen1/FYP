@@ -216,6 +216,8 @@ _PRIORITY_RE = re.compile(
     r"(?:the\s+)?(?:important|urgent|high[-\s]?priority)\b"
     r"|\bany\s+(?:important|urgent)\s+(?:ones?|messages?|emails?|mails?)\b"
     r"|\b(?:important|urgent)\s+(?:ones?|messages?|emails?|mails?)\s+(?:are|were|that)\b"
+    r"|\b(?:important|urgent|high[-\s]?priority)\b.{0,20}\b(?:messages?|emails?|mails?)\b"
+    r"|\b(?:messages?|emails?|mails?)\b.{0,20}\b(?:important|urgent|high[-\s]?priority)\b"
     r"|\b(?:urgent|important)\s+ones\b"
     r"|\bwhat'?s\s+(?:important|urgent)\b"
     r"|\bshould\s+i\s+know\b"
@@ -311,6 +313,8 @@ def _keyword_from_text(text: str) -> str | None:
 def _priority_from_text(text: str) -> str | None:
     if not _PRIORITY_RE.search(text):
         return None
+    if re.search(r"\burgent\b", text) and re.search(r"\bimportant\b", text):
+        return "both"
     return "urgent" if re.search(r"\burgent\b", text) else "important"
 
 
@@ -453,11 +457,15 @@ def detect_message_intent(message: str) -> dict | None:
         return _span_intent(when, count_mode, {})
 
     filters = _filter_params(sender, keyword, unread_only, priority, when)
+    if count_mode and priority:
+        return {"intent": "MESSAGE_COUNT", "params": {**filters, "priority": priority}}
     if count_mode:
         return {"intent": "MESSAGE_COUNT", "params": filters}
     if priority and not any(
         filters.get(key) for key in ("sender", "keyword", "unread_only", "when")
     ):
+        if priority == "both":
+            return {"intent": "IMPORTANT_OR_URGENT_MESSAGES", "params": {}}
         return {
             "intent": "URGENT_MESSAGES" if priority == "urgent" else "IMPORTANT_MESSAGES",
             "params": {},
@@ -523,7 +531,7 @@ def _clean(text, limit: int = 140) -> str:
     return value
 
 
-def _count_reply(total: int, unread: int, important: int, label: str) -> str:
+def _count_reply(total: int, unread: int, label: str) -> str:
     if label:
         if total == 0:
             return f"You received no messages {label}."
@@ -531,8 +539,6 @@ def _count_reply(total: int, unread: int, important: int, label: str) -> str:
         detail = []
         if unread:
             detail.append(f"{unread} unread")
-        if important:
-            detail.append(f"{important} important")
     else:
         if total == 0:
             return "You have no messages in your inbox."
@@ -540,10 +546,6 @@ def _count_reply(total: int, unread: int, important: int, label: str) -> str:
         detail = []
         if unread:
             detail.append(f"{unread} unread" if unread == 1 else f"{unread} are unread")
-        if important:
-            detail.append(
-                f"{important} important" if important == 1 else f"{important} are important"
-            )
     if detail:
         head += " " + " and ".join(detail) + "."
     return head
@@ -583,19 +585,12 @@ async def _fetch(user_id: str, query: dict, limit: int) -> list[dict]:
     )
 
 
-async def _counts(user_id: str, query: dict) -> tuple[int, int, int]:
+async def _counts(user_id: str, query: dict) -> tuple[int, int]:
     total = await messages_collection.count_documents({**query, "user_id": user_id})
     unread = await messages_collection.count_documents(
         {**query, "user_id": user_id, "status": "unread"}
     )
-    important = await messages_collection.count_documents(
-        {
-            **query,
-            "user_id": user_id,
-            "ai_analysis.priority": {"$in": ["urgent", "important"]},
-        }
-    )
-    return total, unread, important
+    return total, unread
 
 
 def _filter_query(params: dict) -> dict:
@@ -619,6 +614,8 @@ def _filter_query(params: dict) -> dict:
     if priority == "urgent":
         query["ai_analysis.priority"] = "urgent"
     elif priority == "important":
+        query["ai_analysis.priority"] = "important"
+    elif priority == "both":
         query["ai_analysis.priority"] = {"$in": ["urgent", "important"]}
     return query
 
@@ -660,20 +657,30 @@ def _with_lines(reply: str, docs: list[dict], total: int | None = None) -> dict:
 
 async def _run_count(user_id: str, params: dict) -> dict:
     query = _filter_query(params)
-    total, unread, important = await _counts(user_id, query)
-    return _ok(_count_reply(total, unread, important, _filter_label(params)))
+    total, unread = await _counts(user_id, query)
+    priority = params.get("priority")
+    if priority in ("urgent", "important", "both"):
+        category = {
+            "urgent": "urgent",
+            "important": "important",
+            "both": "important or urgent",
+        }[priority]
+        return _ok(
+            f"You have {total} {category} {_plural(total, 'message')}."
+        )
+    return _ok(_count_reply(total, unread, _filter_label(params)))
 
 
 async def _run_listing(user_id: str, params: dict, label: str = "") -> dict:
     query = _filter_query(params)
-    total, unread, important = await _counts(user_id, query)
+    total, unread = await _counts(user_id, query)
     if total == 0:
         if label == "today":
             return _ok("You have no messages today.")
         if label:
             return _ok(f"You received no messages {label}.")
         return _ok("You have no messages in your inbox.")
-    head = _count_reply(total, unread, important, label)
+    head = _count_reply(total, unread, label)
     docs = await _fetch(user_id, query, MAX_LISTED)
     return _with_lines(head, docs, total)
 
@@ -692,10 +699,14 @@ async def _run_priority(user_id: str, kind: str) -> dict:
         query = {"ai_analysis.priority": "urgent"}
         empty = "No messages are currently marked urgent."
         head = "You have {n} urgent message{s}:"
-    else:
+    elif kind == "IMPORTANT_OR_URGENT_MESSAGES":
         query = {"ai_analysis.priority": {"$in": ["urgent", "important"]}}
         empty = "No messages are currently marked important or urgent."
         head = "You have {n} message{s} marked important or urgent:"
+    else:
+        query = {"ai_analysis.priority": "important"}
+        empty = "No messages are currently marked important."
+        head = "You have {n} important message{s}:"
     docs = await _fetch(user_id, query, MAX_LISTED)
     if not docs:
         return _ok(empty)
@@ -827,7 +838,11 @@ async def run_message_intent(user_id: str, intent: dict) -> dict:
         if _is_count_mode({"intent": kind, "params": params}):
             return await _run_count(user_id, params)
         return await _run_listing(user_id, params, _filter_label(params))
-    if kind in ("IMPORTANT_MESSAGES", "URGENT_MESSAGES"):
+    if kind in (
+        "IMPORTANT_MESSAGES",
+        "URGENT_MESSAGES",
+        "IMPORTANT_OR_URGENT_MESSAGES",
+    ):
         return await _run_priority(user_id, kind)
     if kind == "SUMMARIZE_MESSAGES":
         return await _run_summarize(user_id)
@@ -907,6 +922,8 @@ def _resolve_message_word(text: str) -> dict | None:
         return None
     if re.search(r"\bsummari[sz]", body):
         return {"intent": "SUMMARIZE_MESSAGES", "params": {}}
+    if re.search(r"\burgent\b", body) and re.search(r"\bimportant\b", body):
+        return {"intent": "IMPORTANT_OR_URGENT_MESSAGES", "params": {}}
     if re.search(r"\burgent\b", body):
         return {"intent": "URGENT_MESSAGES", "params": {}}
     if re.search(r"\bimportant\b|\bhigh[-\s]?priority\b", body):

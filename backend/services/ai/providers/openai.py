@@ -71,7 +71,6 @@ class OpenAIProvider(BaseLLMProvider):
         if api_key == "your-openai-api-key-here":
             raise ValueError("Please replace 'your-openai-api-key-here' with your actual OpenAI API key in backend/.env")
         
-        logger.info(f"✅ Initializing OpenAI provider with API key: {api_key[:20]}...")
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = "gpt-4o-mini"
 

@@ -446,12 +446,14 @@ class TestImportantMessages:
     def test_show_important_messages(self, authed_client, sync_db):
         uid = _resolve_owner(authed_client)
         _seed_message(sync_db, uid, sender="Boss", subject="Review", priority="important")
+        _seed_message(sync_db, uid, sender="VIP", subject="Now", priority="urgent")
         _seed_message(sync_db, uid, sender="Bo", subject="Chat", priority="normal")
 
         data = _chat(authed_client, "show my important messages").json()
         assert data["action"]["type"] == "get_data"
         assert data["action"]["detail"]["count"] == 1
         assert "boss" in data["reply"].lower()
+        assert "vip" not in data["reply"].lower()
         assert "chat" not in data["reply"].lower()
 
     def test_important_messages_isolation(self, client, sync_db):

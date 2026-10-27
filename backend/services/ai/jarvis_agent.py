@@ -607,12 +607,12 @@ async def _fetch_todays_summary(user_id: str) -> dict:
         {**query, "status": "unread"}
     )
     important = await messages_collection.count_documents(
-        {
-            **query,
-            "ai_analysis.priority": {"$in": ["urgent", "important"]},
-        }
+        {**query, "ai_analysis.priority": "important"}
     )
-    return {"total": total, "unread": unread, "important": important}
+    urgent = await messages_collection.count_documents(
+        {**query, "ai_analysis.priority": "urgent"}
+    )
+    return {"total": total, "unread": unread, "important": important, "urgent": urgent}
 
 
 async def _fetch_pending_tasks(user_id: str, limit: int = 5) -> list[dict]:
@@ -1164,6 +1164,8 @@ def _todays_messages_reply(summary: dict) -> str:
         detail.append(f"{summary['unread']} unread")
     if summary["important"]:
         detail.append(f"{summary['important']} important")
+    if summary["urgent"]:
+        detail.append(f"{summary['urgent']} urgent")
     if detail:
         pieces.append(" and ".join(detail) + ".")
     return " ".join(pieces)

@@ -269,7 +269,7 @@ class TestMessageRouting:
         res = _chat(client, "which ones are important?")
         data = res.json()
         assert data["action"] is None
-        assert "marked important or urgent" in data["reply"]
+        assert "1 important message" in data["reply"]
         assert "Needs sign off" in data["reply"]
 
 

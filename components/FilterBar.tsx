@@ -35,7 +35,7 @@ const triggerActive =
   "border-primary/40 bg-primary/10 text-primary";
 
 const panelBase =
-  "absolute left-0 top-full z-10 mt-1.5 w-44 overflow-hidden rounded-lg border border-border bg-card p-1 shadow-md";
+  "absolute left-0 top-full z-50 mt-1.5 w-44 overflow-hidden rounded-lg border border-border bg-card p-1 shadow-md";
 
 export default function FilterBar({
   sources,
@@ -98,7 +98,7 @@ export default function FilterBar({
   return (
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
       {/* Source Filter */}
-      <div className="relative">
+      <div className="relative ">
         <button
           onClick={() => setOpenDropdown(openDropdown === "source" ? null : "source")}
           className={cn(triggerBase, selectedSource ? triggerActive : triggerIdle)}
@@ -111,7 +111,7 @@ export default function FilterBar({
       </div>
 
       {/* Priority Filter */}
-      <div className="relative">
+      <div className="relative overflow-visible">
         <button
           onClick={() => setOpenDropdown(openDropdown === "priority" ? null : "priority")}
           className={cn(triggerBase, selectedPriority ? triggerActive : triggerIdle)}
@@ -124,7 +124,7 @@ export default function FilterBar({
       </div>
 
       {/* Sender Filter */}
-      <div className="relative">
+      <div className="relative overflow-visible">
         <button
           onClick={() => setOpenDropdown(openDropdown === "sender" ? null : "sender")}
           className={cn(triggerBase, selectedSender ? triggerActive : triggerIdle)}
@@ -137,7 +137,7 @@ export default function FilterBar({
       </div>
 
       {/* Date Range Filter */}
-      <div className="relative">
+      <div className="relative overflow-visible">
         <button
           onClick={() => setShowDateRange(!showDateRange)}
           className={cn(triggerBase, startDate || endDate ? triggerActive : triggerIdle)}
@@ -146,7 +146,7 @@ export default function FilterBar({
           Date Range
         </button>
         {showDateRange && (
-          <div className="absolute left-0 top-full z-10 mt-1.5 w-64 rounded-lg border border-border bg-card p-3 shadow-md">
+          <div className="absolute left-0 top-full z-50 mt-1.5 w-64 rounded-lg border border-border bg-card p-3 shadow-md">
             <div className="space-y-3">
               <div className="space-y-1">
                 <label className="text-xs font-medium text-muted-foreground">From</label>
