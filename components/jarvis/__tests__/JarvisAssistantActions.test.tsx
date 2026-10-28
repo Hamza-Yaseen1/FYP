@@ -52,7 +52,7 @@ describe("JarvisAssistant · confirmation flow", () => {
     await user.click(screen.getByTestId("jarvis-launcher"));
 
     await user.type(
-      screen.getByLabelText("JARVIS command"),
+      screen.getByLabelText("Kestrel command"),
       "create a task called finish docs{Enter}"
     );
 
@@ -60,10 +60,10 @@ describe("JarvisAssistant · confirmation flow", () => {
     expect(screen.getByTestId("jarvis-pending-summary")).toHaveTextContent(
       "Create task: finish docs"
     );
-    const input = screen.getByLabelText("JARVIS command");
+    const input = screen.getByLabelText("Kestrel command");
     expect(input).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Confirm JARVIS action" })
+      screen.getByRole("button", { name: "Confirm Kestrel action" })
     ).toBeInTheDocument();
     expect(mocks.routerPush).not.toHaveBeenCalled();
   });
@@ -77,13 +77,13 @@ describe("JarvisAssistant · confirmation flow", () => {
     await user.click(screen.getByTestId("jarvis-launcher"));
 
     await user.type(
-      screen.getByLabelText("JARVIS command"),
+      screen.getByLabelText("Kestrel command"),
       "create a task called finish docs{Enter}"
     );
     await screen.findByText("Should I create it?");
 
     await user.click(
-      screen.getByRole("button", { name: "Confirm JARVIS action" })
+      screen.getByRole("button", { name: "Confirm Kestrel action" })
     );
 
     expect(
@@ -94,7 +94,7 @@ describe("JarvisAssistant · confirmation flow", () => {
       confirmed: true,
     });
     await waitFor(() => {
-      expect(screen.getByLabelText("JARVIS command")).toBeEnabled();
+      expect(screen.getByLabelText("Kestrel command")).toBeEnabled();
     });
   });
 
@@ -107,13 +107,13 @@ describe("JarvisAssistant · confirmation flow", () => {
     await user.click(screen.getByTestId("jarvis-launcher"));
 
     await user.type(
-      screen.getByLabelText("JARVIS command"),
+      screen.getByLabelText("Kestrel command"),
       "create a task called finish docs{Enter}"
     );
     await screen.findByText("Should I create it?");
 
     await user.click(
-      screen.getByRole("button", { name: "Cancel JARVIS action" })
+      screen.getByRole("button", { name: "Cancel Kestrel action" })
     );
 
     expect(
@@ -124,7 +124,7 @@ describe("JarvisAssistant · confirmation flow", () => {
       confirmed: false,
     });
     await waitFor(() => {
-      expect(screen.getByLabelText("JARVIS command")).toBeEnabled();
+      expect(screen.getByLabelText("Kestrel command")).toBeEnabled();
     });
   });
 
@@ -137,13 +137,13 @@ describe("JarvisAssistant · confirmation flow", () => {
     await user.click(screen.getByTestId("jarvis-launcher"));
 
     await user.type(
-      screen.getByLabelText("JARVIS command"),
+      screen.getByLabelText("Kestrel command"),
       "create a task called finish docs{Enter}"
     );
     await screen.findByText("Should I create it?");
 
     await user.click(
-      screen.getByRole("button", { name: "Confirm JARVIS action" })
+      screen.getByRole("button", { name: "Confirm Kestrel action" })
     );
 
     expect(
@@ -152,7 +152,7 @@ describe("JarvisAssistant · confirmation flow", () => {
       )
     ).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByLabelText("JARVIS command")).toBeEnabled();
+      expect(screen.getByLabelText("Kestrel command")).toBeEnabled();
     });
   });
 
@@ -170,13 +170,13 @@ describe("JarvisAssistant · confirmation flow", () => {
     await user.click(screen.getByTestId("jarvis-launcher"));
 
     await user.type(
-      screen.getByLabelText("JARVIS command"),
+      screen.getByLabelText("Kestrel command"),
       "create a task called finish docs{Enter}"
     );
     await screen.findByText("Should I create it?");
 
     await user.click(
-      screen.getByRole("button", { name: "Confirm JARVIS action" })
+      screen.getByRole("button", { name: "Confirm Kestrel action" })
     );
 
     expect(await screen.findByText("Opening your inbox.")).toBeInTheDocument();

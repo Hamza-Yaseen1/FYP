@@ -169,7 +169,7 @@ describe("JarvisAssistant · voice barge-in", () => {
 
   async function speakReply(user: ReturnType<typeof userEvent.setup>) {
     await user.type(
-      screen.getByLabelText("JARVIS command"),
+      screen.getByLabelText("Kestrel command"),
       "open my inbox{Enter}"
     );
     await waitFor(() => expect(mocks.jarvisChat).toHaveBeenCalledWith("open my inbox"));
@@ -231,7 +231,7 @@ describe("JarvisAssistant · voice barge-in", () => {
       );
     });
 
-    const input = screen.getByLabelText("JARVIS command");
+    const input = screen.getByLabelText("Kestrel command");
     expect(input).toHaveValue("take me to the dashboard");
     expect(mocks.jarvisChat).toHaveBeenCalledTimes(1);
     expect(mocks.routerPush).toHaveBeenCalledTimes(1); // original inbox nav only
@@ -275,10 +275,10 @@ describe("JarvisAssistant · voice barge-in", () => {
         })
     );
     const user = await openPanel();
-    await user.type(screen.getByLabelText("JARVIS command"), "hello{Enter}");
+    await user.type(screen.getByLabelText("Kestrel command"), "hello{Enter}");
     expect(mocks.jarvisChat).toHaveBeenCalledWith("hello");
 
-    await user.click(screen.getByRole("button", { name: "Close JARVIS" }));
+    await user.click(screen.getByRole("button", { name: "Close Kestrel" }));
     await act(async () => {
       resolveChat({ reply: "late reply", action: null, used_ai: false });
     });
@@ -295,7 +295,7 @@ describe("JarvisAssistant · voice barge-in", () => {
     const utterance = await speakReply(user);
     act(() => utterance.onstart?.());
 
-    await user.click(screen.getByRole("button", { name: "Talk to JARVIS" }));
+    await user.click(screen.getByRole("button", { name: "Talk to Kestrel" }));
 
     expect(mocks.synthCancel).toHaveBeenCalled();
     expect(screen.getByText("Listening…")).toBeInTheDocument();
@@ -305,7 +305,7 @@ describe("JarvisAssistant · voice barge-in", () => {
         finalEvent("show me my tasks")
       );
     });
-    expect(screen.getByLabelText("JARVIS command")).toHaveValue(
+    expect(screen.getByLabelText("Kestrel command")).toHaveValue(
       "show me my tasks"
     );
   });

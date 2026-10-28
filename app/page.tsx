@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
+import { BRAND_NAME } from "@/lib/brand";
 
 const features = [
   {
@@ -72,7 +73,7 @@ export default function Home() {
               <Inbox size={15} strokeWidth={2} />
             </span>
             <span className="text-[15px] font-semibold tracking-tight">
-              Signal Desk
+              {BRAND_NAME}
             </span>
           </Link>
           <div className="flex items-center gap-2">
@@ -107,7 +108,7 @@ export default function Home() {
                     <Inbox size={18} strokeWidth={2} />
                   </span>
                   <span className="text-sm font-semibold tracking-tight">
-                    Signal Desk
+                    {BRAND_NAME}
                   </span>
                 </div>
 
@@ -234,7 +235,7 @@ export default function Home() {
               <Inbox size={14} strokeWidth={2} />
             </span>
             <span className="text-sm font-semibold tracking-tight">
-              Signal Desk
+              {BRAND_NAME}
             </span>
           </div>
           <p className="text-center text-xs text-muted-foreground">

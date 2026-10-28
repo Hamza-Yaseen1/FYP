@@ -56,10 +56,10 @@ describe("JarvisPanel · Phase 2 actions", () => {
       "Due: friday"
     );
     expect(
-      screen.getByRole("button", { name: "Confirm JARVIS action" })
+      screen.getByRole("button", { name: "Confirm Kestrel action" })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Cancel JARVIS action" })
+      screen.getByRole("button", { name: "Cancel Kestrel action" })
     ).toBeInTheDocument();
   });
 
@@ -70,7 +70,7 @@ describe("JarvisPanel · Phase 2 actions", () => {
       <JarvisPanel {...baseProps} open onConfirm={onConfirm} messages={[confirmationMessage]} />
     );
     await user.click(
-      screen.getByRole("button", { name: "Confirm JARVIS action" })
+      screen.getByRole("button", { name: "Confirm Kestrel action" })
     );
     expect(onConfirm).toHaveBeenCalledWith(confirmationMessage);
   });
@@ -82,7 +82,7 @@ describe("JarvisPanel · Phase 2 actions", () => {
       <JarvisPanel {...baseProps} open onCancel={onCancel} messages={[confirmationMessage]} />
     );
     await user.click(
-      screen.getByRole("button", { name: "Cancel JARVIS action" })
+      screen.getByRole("button", { name: "Cancel Kestrel action" })
     );
     expect(onCancel).toHaveBeenCalledWith(confirmationMessage);
   });
@@ -92,10 +92,10 @@ describe("JarvisPanel · Phase 2 actions", () => {
       <JarvisPanel {...baseProps} open confirming messages={[confirmationMessage]} />
     );
     expect(
-      screen.getByRole("button", { name: "Confirm JARVIS action" })
+      screen.getByRole("button", { name: "Confirm Kestrel action" })
     ).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Cancel JARVIS action" })
+      screen.getByRole("button", { name: "Cancel Kestrel action" })
     ).toBeDisabled();
   });
 
@@ -119,14 +119,14 @@ describe("JarvisPanel · Phase 2 actions", () => {
         messages={[confirmationMessage]}
       />
     );
-    const input = screen.getByLabelText("JARVIS command");
+    const input = screen.getByLabelText("Kestrel command");
     expect(input).toBeDisabled();
     expect(input).toHaveAttribute(
       "placeholder",
       "Confirm or cancel your pending action…"
     );
     expect(screen.getByRole("button", { name: "Send command" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Talk to JARVIS" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Talk to Kestrel" })).toBeDisabled();
 
     await user.type(input, "stop");
     expect(onSend).not.toHaveBeenCalled();

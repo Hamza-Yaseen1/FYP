@@ -1,9 +1,10 @@
 "use client";
 
+import { ASSISTANT_NAME } from "@/lib/brand";
 import type { JarvisOrbState } from "./types";
 
 const labels: Record<JarvisOrbState, string> = {
-  idle: "JARVIS ready",
+  idle: `${ASSISTANT_NAME} ready`,
   listening: "Listening…",
   thinking: "Thinking…",
   speaking: "Speaking…",

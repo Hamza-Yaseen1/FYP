@@ -1,6 +1,7 @@
 "use client";
 
 import { Sparkles } from "lucide-react";
+import { ASSISTANT_NAME } from "@/lib/brand";
 import JarvisOrb from "./JarvisOrb";
 
 export default function JarvisLauncher({
@@ -13,7 +14,7 @@ export default function JarvisLauncher({
   return (
     <button
       type="button"
-      aria-label="Open JARVIS"
+      aria-label={`Open ${ASSISTANT_NAME}`}
       data-testid="jarvis-launcher"
       onClick={onClick}
       className="group fixed right-4 bottom-4 z-40 flex items-center gap-2 rounded-full border border-border/60 glass-card p-2 pr-3.5 pastel-shadow transition-transform hover:scale-[1.03] active:scale-[0.98]"
@@ -24,7 +25,7 @@ export default function JarvisLauncher({
           size={14}
           className="text-signal transition-transform group-hover:rotate-12"
         />
-        JARVIS
+        {ASSISTANT_NAME}
       </span>
     </button>
   );

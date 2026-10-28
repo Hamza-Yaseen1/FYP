@@ -2,6 +2,7 @@ import { Inbox } from "lucide-react";
 import AuroraBackdrop from "@/components/AuroraBackdrop";
 import { GlassCard } from "@/components/GlassCard";
 import ThemeToggle from "@/components/ThemeToggle";
+import { BRAND_NAME } from "@/lib/brand";
 
 export default function AuthLayout({
   children,
@@ -27,7 +28,7 @@ export default function AuthLayout({
               </div>
               <div className="text-center">
                 <h1 className="text-xl font-semibold tracking-tight">
-                  Signal Desk
+                  {BRAND_NAME}
                 </h1>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Communication triage, sorted by AI

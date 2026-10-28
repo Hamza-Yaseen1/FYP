@@ -1,5 +1,6 @@
 "use client";
 
+import { ASSISTANT_NAME } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 import type { JarvisOrbState } from "./types";
 
@@ -30,7 +31,7 @@ export default function JarvisOrb({
   return (
     <div
       role="status"
-      aria-label={`JARVIS ${state}`}
+      aria-label={`${ASSISTANT_NAME} ${state}`}
       aria-live="polite"
       data-state={state}
       className={cn(

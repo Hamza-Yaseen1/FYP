@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Mic, Send, X } from "lucide-react";
+import { ASSISTANT_NAME } from "@/lib/brand";
 import JarvisOrb from "./JarvisOrb";
 import JarvisStatus from "./JarvisStatus";
 import type { JarvisAction, JarvisMessage, JarvisOrbState } from "./types";
@@ -95,7 +96,7 @@ export default function JarvisPanel({
         </div>
         <button
           type="button"
-          aria-label="Close JARVIS"
+          aria-label={`Close ${ASSISTANT_NAME}`}
           onClick={onClose}
           className="grid size-7 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
@@ -141,7 +142,7 @@ export default function JarvisPanel({
                     <div className="mt-2 flex items-center gap-2">
                       <button
                         type="button"
-                        aria-label="Confirm JARVIS action"
+                        aria-label={`Confirm ${ASSISTANT_NAME} action`}
                         onClick={() => onConfirm(message)}
                         disabled={confirming || busy}
                         data-action="confirm"
@@ -155,7 +156,7 @@ export default function JarvisPanel({
                       </button>
                       <button
                         type="button"
-                        aria-label="Cancel JARVIS action"
+                        aria-label={`Cancel ${ASSISTANT_NAME} action`}
                         onClick={() => onCancel(message)}
                         disabled={confirming || busy}
                         data-action="cancel"
@@ -190,7 +191,7 @@ export default function JarvisPanel({
       <div className="flex items-center gap-2 border-t border-border/60 px-3 py-3">
         <button
           type="button"
-          aria-label={listening ? "Stop listening" : "Talk to JARVIS"}
+          aria-label={listening ? "Stop listening" : `Talk to ${ASSISTANT_NAME}`}
           onClick={onToggleMic}
           disabled={!micSupported || pendingConfirmation}
           className={
@@ -218,7 +219,7 @@ export default function JarvisPanel({
                 ? "Type a command or tap the mic…"
                 : "Type a command…"
           }
-          aria-label="JARVIS command"
+          aria-label={`${ASSISTANT_NAME} command`}
           className="h-8 min-w-0 flex-1 rounded-lg bg-surface-2 px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50"
         />
         <button

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { jarvisChat } from "@/lib/api/jarvis";
+import { localizeAssistantReply } from "@/lib/brand";
 import JarvisLauncher from "./JarvisLauncher";
 import JarvisPanel from "./JarvisPanel";
 import { useSpeechRecognition } from "./hooks/useSpeechRecognition";
@@ -130,14 +131,15 @@ export default function JarvisAssistant() {
     try {
       const response = await jarvisChat(text);
       if (generation !== generationRef.current) return;
-      pushReply(response.reply, response.action);
+      const reply = localizeAssistantReply(response.reply);
+      pushReply(reply, response.action);
       if (response.action?.type === "request_confirmation") {
         setPendingConfirmation(response.action);
       } else {
         applyNavigation(response);
       }
       if (ttsSupported) {
-        speak(response.reply);
+        speak(reply);
       }
     } catch {
       if (generation === generationRef.current) {
@@ -162,10 +164,11 @@ export default function JarvisAssistant() {
         confirmed,
       });
       if (generation !== generationRef.current) return;
-      pushReply(response.reply, response.action);
+      const reply = localizeAssistantReply(response.reply);
+      pushReply(reply, response.action);
       applyNavigation(response);
       if (ttsSupported) {
-        speak(response.reply);
+        speak(reply);
       }
     } catch {
       if (generation === generationRef.current) {
