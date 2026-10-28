@@ -17,6 +17,8 @@
  * and only ever concern the logged-in user.
  */
 
+import { apiUrl } from "./api/config";
+
 export type RealtimeEventType = "message.created" | "message.updated";
 
 export interface RealtimeEvent {
@@ -27,8 +29,6 @@ export interface RealtimeEvent {
 
 type EventListener = (event: RealtimeEvent) => void;
 type StatusListener = (connected: boolean) => void;
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
 
 const BASE_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 15000;
@@ -51,7 +51,7 @@ export function wsTokenEnabled(): boolean {
 export async function fetchWsToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
   try {
-    const res = await fetch(`${API_BASE}/ws-token`, {
+    const res = await fetch(apiUrl("/ws-token"), {
       credentials: "include",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
@@ -76,11 +76,11 @@ export async function fetchWsToken(): Promise<string | null> {
  * rewrite: Next.js handlers/rewrites are not a reliable WebSocket proxy.
  */
 function resolveWebSocketBase(): string {
-  const explicit = process.env.NEXT_PUBLIC_WS_URL;
-  if (explicit) return explicit;
+  const explicit = process.env.NEXT_PUBLIC_WS_URL?.trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
   if (typeof window === "undefined") return "";
 
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE;
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE?.trim().replace(/\/+$/, "");
   if (apiBase && /^https?:\/\//i.test(apiBase)) {
     return `${apiBase.replace(/^https?/i, (m) => (m.toLowerCase() === "https" ? "wss" : "ws"))}/ws`;
   }

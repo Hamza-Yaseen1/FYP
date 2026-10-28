@@ -1,15 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiUrl } from "@/lib/api/config";
 
 export default function HealthBadge() {
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
 
   useEffect(() => {
-    fetch("http://localhost:8000/health")
-      .then((res) => res.json())
-      .then((data) => setStatus(data.status === "ok" ? "ok" : "error"))
-      .catch(() => setStatus("error"));
+    let cancelled = false;
+    fetch(apiUrl("/health"), { credentials: "include", cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled) setStatus(data?.status === "ok" ? "ok" : "error");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const dot =
