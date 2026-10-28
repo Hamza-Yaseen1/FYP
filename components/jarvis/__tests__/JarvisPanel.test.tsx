@@ -50,7 +50,7 @@ describe("JarvisPanel", () => {
     render(
       <JarvisPanel {...baseProps} open onSend={onSend} messages={[]} />
     );
-    const input = screen.getByLabelText("JARVIS command");
+    const input = screen.getByLabelText("Kestrel command");
     await user.type(input, "what needs my attention?");
     await user.click(screen.getByRole("button", { name: "Send command" }));
     expect(onSend).toHaveBeenCalledWith("what needs my attention?");
@@ -61,7 +61,7 @@ describe("JarvisPanel", () => {
     const user = userEvent.setup();
     const onSend = vi.fn();
     render(<JarvisPanel {...baseProps} open onSend={onSend} messages={[]} />);
-    const input = screen.getByLabelText("JARVIS command");
+    const input = screen.getByLabelText("Kestrel command");
     expect(screen.getByRole("button", { name: "Send command" })).toBeDisabled();
     await user.type(input, "hello{Enter}");
     expect(onSend).toHaveBeenCalledWith("hello");
@@ -87,7 +87,7 @@ describe("JarvisPanel", () => {
     const user = userEvent.setup();
     const onToggleMic = vi.fn();
     render(<JarvisPanel {...baseProps} open onToggleMic={onToggleMic} messages={[]} />);
-    await user.click(screen.getByRole("button", { name: "Talk to JARVIS" }));
+    await user.click(screen.getByRole("button", { name: "Talk to Kestrel" }));
     expect(onToggleMic).toHaveBeenCalledTimes(1);
   });
 
@@ -95,14 +95,14 @@ describe("JarvisPanel", () => {
     render(
       <JarvisPanel {...baseProps} open micSupported={false} messages={[]} />
     );
-    expect(screen.getByRole("button", { name: "Talk to JARVIS" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Talk to Kestrel" })).toBeDisabled();
   });
 
   it("calls onClose from the header", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(<JarvisPanel {...baseProps} open onClose={onClose} messages={[]} />);
-    await user.click(screen.getByRole("button", { name: "Close JARVIS" }));
+    await user.click(screen.getByRole("button", { name: "Close Kestrel" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

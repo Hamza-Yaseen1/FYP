@@ -96,7 +96,7 @@ describe("JarvisAssistant · speech-to-text", () => {
     render(<JarvisAssistant />);
     await user.click(screen.getByTestId("jarvis-launcher"));
 
-    const mic = screen.getByRole("button", { name: "Talk to JARVIS" });
+    const mic = screen.getByRole("button", { name: "Talk to Kestrel" });
     expect(mic).toBeEnabled();
     await user.click(mic);
 
@@ -104,7 +104,7 @@ describe("JarvisAssistant · speech-to-text", () => {
       fake.instances[0].onresult?.(finalResultEvent("Hello Jarvis"));
     });
 
-    const input = screen.getByLabelText("JARVIS command");
+    const input = screen.getByLabelText("Kestrel command");
     expect(input).toHaveValue("Hello Jarvis");
     expect(mocks.jarvisChat).not.toHaveBeenCalled();
 
@@ -112,7 +112,7 @@ describe("JarvisAssistant · speech-to-text", () => {
     await waitFor(() =>
       expect(mocks.jarvisChat).toHaveBeenCalledWith("Hello Jarvis")
     );
-    expect(await screen.findByText("Hello Jarvis speaking.")).toBeInTheDocument();
+    expect(await screen.findByText("Hello Kestrel speaking.")).toBeInTheDocument();
     expect(input).toHaveValue("");
   });
 
@@ -120,13 +120,13 @@ describe("JarvisAssistant · speech-to-text", () => {
     const user = userEvent.setup();
     render(<JarvisAssistant />);
     await user.click(screen.getByTestId("jarvis-launcher"));
-    await user.click(screen.getByRole("button", { name: "Talk to JARVIS" }));
+    await user.click(screen.getByRole("button", { name: "Talk to Kestrel" }));
 
     act(() => {
       fake.instances[0].onresult?.(finalResultEvent("open my inbox"));
     });
 
-    expect(screen.getByLabelText("JARVIS command")).toHaveValue("open my inbox");
+    expect(screen.getByLabelText("Kestrel command")).toHaveValue("open my inbox");
     expect(mocks.jarvisChat).not.toHaveBeenCalled();
     expect(mocks.routerPush).not.toHaveBeenCalled();
   });

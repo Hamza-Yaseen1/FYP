@@ -18,7 +18,7 @@ describe("JarvisLauncher", () => {
   it("is labelled for assistive tech", () => {
     render(<JarvisLauncher state="idle" onClick={vi.fn()} />);
     expect(
-      screen.getByRole("button", { name: "Open JARVIS" })
+      screen.getByRole("button", { name: "Open Kestrel" })
     ).toBeInTheDocument();
   });
 });

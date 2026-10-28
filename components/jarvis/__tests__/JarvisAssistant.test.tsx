@@ -44,7 +44,7 @@ describe("JarvisAssistant", () => {
     await user.click(screen.getByTestId("jarvis-launcher"));
 
     await user.type(
-      screen.getByLabelText("JARVIS command"),
+      screen.getByLabelText("Kestrel command"),
       "take me to inbox{Enter}"
     );
 
@@ -55,12 +55,32 @@ describe("JarvisAssistant", () => {
     expect(mocks.routerPush).toHaveBeenCalledWith("/inbox");
   });
 
+  it("localizes legacy assistant and product names in replies", async () => {
+    const user = userEvent.setup();
+    mocks.jarvisChat.mockResolvedValue({
+      reply: "I am JARVIS, your Signal Desk assistant.",
+      action: null,
+      used_ai: false,
+    });
+    render(<JarvisAssistant />);
+    await user.click(screen.getByTestId("jarvis-launcher"));
+
+    await user.type(
+      screen.getByLabelText("Kestrel command"),
+      "who are you{Enter}"
+    );
+
+    expect(
+      await screen.findByText("I am Kestrel, your Sift assistant.")
+    ).toBeInTheDocument();
+  });
+
   it("shows a fallback message on backend failure", async () => {
     const user = userEvent.setup();
     mocks.jarvisChat.mockRejectedValue(new Error("boom"));
     render(<JarvisAssistant />);
     await user.click(screen.getByTestId("jarvis-launcher"));
-    await user.type(screen.getByLabelText("JARVIS command"), "unread{Enter}");
+    await user.type(screen.getByLabelText("Kestrel command"), "unread{Enter}");
 
     expect(
       await screen.findByText(
@@ -74,7 +94,7 @@ describe("JarvisAssistant", () => {
     const user = userEvent.setup();
     render(<JarvisAssistant />);
     await user.click(screen.getByTestId("jarvis-launcher"));
-    await user.type(screen.getByLabelText("JARVIS command"), "   {Enter}");
+    await user.type(screen.getByLabelText("Kestrel command"), "   {Enter}");
     expect(mocks.jarvisChat).not.toHaveBeenCalled();
   });
 
@@ -82,7 +102,7 @@ describe("JarvisAssistant", () => {
     const user = userEvent.setup();
     render(<JarvisAssistant />);
     await user.click(screen.getByTestId("jarvis-launcher"));
-    await user.click(screen.getByRole("button", { name: "Close JARVIS" }));
+    await user.click(screen.getByRole("button", { name: "Close Kestrel" }));
     expect(screen.queryByTestId("jarvis-panel")).not.toBeInTheDocument();
     expect(screen.getByTestId("jarvis-launcher")).toBeInTheDocument();
   });

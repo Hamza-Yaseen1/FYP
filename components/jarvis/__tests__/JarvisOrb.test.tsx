@@ -11,7 +11,7 @@ describe("JarvisOrb", () => {
     const orb = getByRole("status");
     expect(orb).toHaveAttribute("data-state", "idle");
     expect(orb).toHaveClass("jarvis-orb--idle");
-    expect(orb).toHaveAttribute("aria-label", "JARVIS idle");
+    expect(orb).toHaveAttribute("aria-label", "Kestrel idle");
   });
 
   it.each(["listening", "thinking", "speaking"] as const)(

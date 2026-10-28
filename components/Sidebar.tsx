@@ -11,6 +11,7 @@ import {
   Link2,
   Settings,
 } from "lucide-react";
+import { BRAND_NAME } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -40,7 +41,7 @@ export default function Sidebar({ className, onNavigate }: SidebarProps) {
         </span>
         <div className="leading-tight">
           <span className="block text-[15px] font-semibold tracking-tight">
-            Signal Desk
+            {BRAND_NAME}
           </span>
           <span className="text-xs text-muted-foreground">
             Communication overload, managed

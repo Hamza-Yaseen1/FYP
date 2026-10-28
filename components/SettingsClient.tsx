@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
+import { BRAND_NAME } from "@/lib/brand";
 
 interface Me {
   name: string;
@@ -117,7 +118,7 @@ export default function SettingsClient() {
         <SectionHeader
           icon={User}
           title="Appearance"
-          description="Choose how Signal Desk looks in this browser."
+          description={`Choose how ${BRAND_NAME} looks in this browser.`}
         />
         <div className="p-5">
           <AppearanceSettings />
