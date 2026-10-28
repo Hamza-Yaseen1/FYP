@@ -32,49 +32,53 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await users_collection.create_index("email", unique=True)
-    await messages_collection.create_index([("user_id", 1), ("created_at", -1)])
-    await messages_collection.create_index(
-        [("sender", "text"), ("content", "text"), ("ai_analysis.summary", "text")],
-        background=True,
-    )
-    # Eliminate the legacy global dedupe index (external_message_id alone) —
-    # a cross-user key collision would block a legitimately-distinct second
-    # user's same-key document. Replace with the user-scoped composite.
     try:
-        await messages_collection.drop_index("external_message_id_1")
-    except Exception:
-        pass
-    await messages_collection.create_index(
-        [("user_id", 1), ("external_message_id", 1)],
-        unique=True,
-        partialFilterExpression={"external_message_id": {"$type": "string"}},
-    )
-    await messages_collection.create_index(
-        [("user_id", 1), ("conversationId", 1), ("received_at", -1)]
-    )
-    await messages_collection.create_index(
-        [("user_id", 1), ("threadId", 1), ("received_at", -1)]
-    )
-    # Counts/filter hot paths: user-scoped priority/status selects are covered
-    # by compound indexes instead of scanning every message of the user.
-    await messages_collection.create_index(
-        [("user_id", 1), ("ai_analysis.priority", 1), ("created_at", -1)]
-    )
-    await messages_collection.create_index(
-        [("user_id", 1), ("status", 1), ("created_at", -1)]
-    )
-    # Source dropdowns / source filters.
-    await messages_collection.create_index(
-        [("user_id", 1), ("source", 1), ("created_at", -1)]
-    )
-    await tasks_collection.create_index([("user_id", 1), ("created_at", -1)])
-    await connections_collection.create_index(
-        [("user_id", 1), ("provider", 1)],
-        unique=True
-    )
-    await connections_collection.create_index([("user_id", 1)])
-    await create_indexes()
+        await users_collection.create_index("email", unique=True)
+        await messages_collection.create_index([("user_id", 1), ("created_at", -1)])
+        await messages_collection.create_index(
+            [("sender", "text"), ("content", "text"), ("ai_analysis.summary", "text")],
+            background=True,
+        )
+        # Eliminate the legacy global dedupe index (external_message_id alone) —
+        # a cross-user key collision would block a legitimately-distinct second
+        # user's same-key document. Replace with the user-scoped composite.
+        try:
+            await messages_collection.drop_index("external_message_id_1")
+        except Exception:
+            pass
+        await messages_collection.create_index(
+            [("user_id", 1), ("external_message_id", 1)],
+            unique=True,
+            partialFilterExpression={"external_message_id": {"$type": "string"}},
+        )
+        await messages_collection.create_index(
+            [("user_id", 1), ("conversationId", 1), ("received_at", -1)]
+        )
+        await messages_collection.create_index(
+            [("user_id", 1), ("threadId", 1), ("received_at", -1)]
+        )
+        # Counts/filter hot paths: user-scoped priority/status selects are covered
+        # by compound indexes instead of scanning every message of the user.
+        await messages_collection.create_index(
+            [("user_id", 1), ("ai_analysis.priority", 1), ("created_at", -1)]
+        )
+        await messages_collection.create_index(
+            [("user_id", 1), ("status", 1), ("created_at", -1)]
+        )
+        # Source dropdowns / source filters.
+        await messages_collection.create_index(
+            [("user_id", 1), ("source", 1), ("created_at", -1)]
+        )
+        await tasks_collection.create_index([("user_id", 1), ("created_at", -1)])
+        await connections_collection.create_index(
+            [("user_id", 1), ("provider", 1)],
+            unique=True
+        )
+        await connections_collection.create_index([("user_id", 1)])
+        await create_indexes()
+    except Exception as e:
+        logger.warning(f"Failed to create indexes: {e}")
+        # Continue startup even if DB is not accessible
 
     # Start Gmail poller if credentials are configured (skip the test DB —
     # the poller would hit Google with throwaway test tokens every cycle)

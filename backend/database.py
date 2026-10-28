@@ -4,10 +4,27 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import dns.resolver
+
+# Configure dnspython with public DNS resolvers (Google & Cloudflare).
+# Local Wi-Fi/ISP/university DNS servers often time out on MongoDB SRV queries.
+try:
+    resolver = dns.resolver.Resolver(configure=False)
+    resolver.nameservers = ["8.8.8.8", "1.1.1.1", "8.8.4.4"]
+    dns.resolver.default_resolver = resolver
+except Exception:
+    pass
+
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "communication_ai")
 
-client = AsyncIOMotorClient(MONGO_URI, tz_aware=True)
+# Add connection options for better reliability
+client = AsyncIOMotorClient(
+    MONGO_URI, 
+    tz_aware=True,
+    serverSelectionTimeoutMS=5000,
+    connectTimeoutMS=5000,
+)
 db = client[DB_NAME]
 
 # Collections

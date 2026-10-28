@@ -179,10 +179,21 @@ Once the backend is running, visit:
 ## 🔐 Environment Variables
 
 ### Frontend
-Create `.env.local` (optional):
+Copy `.env.example` to `.env.local` and set the backend origin:
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+BACKEND_URL=https://fyp-omega-peach.vercel.app
+NEXT_PUBLIC_API_BASE=/api
 ```
+
+| Variable | Visibility | Purpose |
+|----------|------------|---------|
+| `BACKEND_URL` | server only | Origin used by the Next.js `/api/:path*` rewrite and the server-side logout route. **Change this one value to switch backends.** |
+| `NEXT_PUBLIC_API_BASE` | browser | API prefix used by every frontend request. Keep `/api` so requests stay same-origin and the httpOnly session cookie is forwarded through the Next.js proxy. |
+| `NEXT_PUBLIC_WS_URL` | browser (optional) | Direct backend WebSocket URL (e.g. `wss://host/ws`). Next.js rewrites do not proxy WebSockets. |
+
+`NEXT_PUBLIC_*` values are inlined into the browser bundle at build time — never
+put secrets in them. Restart `next dev` after changing `.env.local`; on Vercel,
+update the project environment variable and redeploy.
 
 ### Backend
 Create `backend/.env` (a template with every variable is in `backend/.env.example`):

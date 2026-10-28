@@ -5,12 +5,11 @@ export interface Connection {
   created_at: string;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
-
 import { clearCache } from "@/lib/api";
+import { apiUrl } from "@/lib/api/config";
 
 export async function getConnections(): Promise<Connection[]> {
-  const response = await fetch(`${API_BASE}/connections`, {
+  const response = await fetch(apiUrl("/connections"), {
     credentials: "include",
   });
 
@@ -28,7 +27,7 @@ export async function getConnections(): Promise<Connection[]> {
 export async function createConnection(
   provider: "whatsapp" | "gmail"
 ): Promise<Connection> {
-  const response = await fetch(`${API_BASE}/connections`, {
+  const response = await fetch(apiUrl("/connections"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -56,7 +55,7 @@ export async function createConnection(
 }
 
 export async function deleteConnection(connectionId: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/connections/${connectionId}`, {
+  const response = await fetch(apiUrl(`/connections/${connectionId}`), {
     method: "DELETE",
     credentials: "include",
   });
@@ -79,7 +78,7 @@ export async function deleteConnection(connectionId: string): Promise<void> {
 }
 
 export async function getGmailAuthUrl(): Promise<string> {
-  const response = await fetch(`${API_BASE}/connections/gmail/auth-url`, {
+  const response = await fetch(apiUrl("/connections/gmail/auth-url"), {
     credentials: "include",
   });
 

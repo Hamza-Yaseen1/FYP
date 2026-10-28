@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
+import { apiUrl } from "./api/config";
 
 export class ApiError extends Error {
   status: number;
@@ -6,6 +6,22 @@ export class ApiError extends Error {
   constructor(status: number, message: string) {
     super(message);
     this.status = status;
+  }
+}
+
+/**
+ * Wrap `fetch` so network-level failures (DNS, offline, CORS, backend down)
+ * surface as an `ApiError` with a useful message instead of a bare TypeError.
+ */
+async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch {
+    throw new ApiError(
+      0,
+      "Cannot reach the server. Check your connection and that the backend URL " +
+        "(BACKEND_URL / NEXT_PUBLIC_API_BASE) is correct."
+    );
   }
 }
 
@@ -29,7 +45,7 @@ function cacheKey(path: string, options?: RequestInit): string | null {
   if (method !== "GET") return null;
   // opt-out via cache: "no-store"
   if (options?.cache === "no-store") return null;
-  return `${method}:${API_BASE}${path}`;
+  return `${method}:${apiUrl(path)}`;
 }
 
 function cachedGet<T>(key: string, path: string, options?: RequestInit): Promise<T> {
@@ -45,7 +61,7 @@ function cachedGet<T>(key: string, path: string, options?: RequestInit): Promise
 
   const ttl = DEFAULT_TTL_MS;
 
-  const promise = fetch(`${API_BASE}${path}`, {
+  const promise = safeFetch(apiUrl(path), {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
@@ -124,7 +140,7 @@ export async function apiFetch<T = unknown>(
   const key = cacheKey(path, options);
   if (key) return cachedGet<T>(key, path, options);
 
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await safeFetch(apiUrl(path), {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",

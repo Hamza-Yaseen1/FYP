@@ -13,12 +13,11 @@ export interface Task {
   is_snoozed: boolean;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
-
 import { clearCache } from "@/lib/api";
+import { apiUrl } from "@/lib/api/config";
 
 export async function getTasks(): Promise<Task[]> {
-  const response = await fetch(`${API_BASE}/tasks`, {
+  const response = await fetch(apiUrl("/tasks"), {
     credentials: "include",
   });
 
@@ -33,7 +32,7 @@ export async function getTasks(): Promise<Task[]> {
 }
 
 export async function completeTask(taskId: string): Promise<Task> {
-  const response = await fetch(`${API_BASE}/tasks/${taskId}/status`, {
+  const response = await fetch(apiUrl(`/tasks/${taskId}/status`), {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -61,7 +60,7 @@ export async function completeTask(taskId: string): Promise<Task> {
 }
 
 export async function snoozeTask(taskId: string, duration: string): Promise<Task> {
-  const response = await fetch(`${API_BASE}/tasks/${taskId}/snooze`, {
+  const response = await fetch(apiUrl(`/tasks/${taskId}/snooze`), {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -97,7 +96,7 @@ export interface TaskSourceMessage {
 }
 
 export async function getTaskMessage(taskId: string): Promise<TaskSourceMessage> {
-  const response = await fetch(`${API_BASE}/tasks/${taskId}/message`, {
+  const response = await fetch(apiUrl(`/tasks/${taskId}/message`), {
     credentials: "include",
   });
 

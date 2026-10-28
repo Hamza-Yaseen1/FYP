@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { backendUrl } from "@/lib/api/server";
 
 export async function POST() {
   // Forward the logout request to the backend to clear the session cookie
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("cai_token");
-    
-    await fetch("http://localhost:8000/auth/logout", {
+
+    await fetch(backendUrl("/auth/logout"), {
       method: "POST",
-      credentials: "include",
+      cache: "no-store",
       headers: {
         Cookie: token ? `cai_token=${token.value}` : "",
       },
