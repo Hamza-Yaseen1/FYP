@@ -26,13 +26,17 @@ const BACKEND_URL = (rawBackendUrl || DEV_BACKEND_URL).replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
   async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${BACKEND_URL}/:path*`,
-      },
-    ];
-  },
+  return [
+    {
+      source: "/api/:path*",
+      destination: `${BACKEND_URL}/:path*`,
+    },
+    {
+      source: "/auth/google/callback",
+      destination: `${BACKEND_URL}/auth/google/callback`,
+    },
+  ];
+},
 };
 
 export default nextConfig;

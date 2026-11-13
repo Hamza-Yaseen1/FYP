@@ -19,6 +19,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: `${BRAND_NAME} — Communication Overload Management`,
   description: "AI-first communication triage — read everything, surface what matters.",
+  verification: {
+    google: "W8rq2ypu8UtZFI2xGUX0drcOIAbqP6L_NMglP6g0Nr4"
+  },
 };
 
 /* Applies the saved theme before first paint to avoid a flash.
