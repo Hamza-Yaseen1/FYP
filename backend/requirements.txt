@@ -9,7 +9,7 @@ bcrypt
 cryptography
 PyJWT
 email-validator
+httpx
 
 # dev/test
 pytest
-httpx

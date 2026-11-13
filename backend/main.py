@@ -34,6 +34,7 @@ logging.basicConfig(
 async def lifespan(app: FastAPI):
     try:
         await users_collection.create_index("email", unique=True)
+        await users_collection.create_index("reset_token_hash", sparse=True)
         await messages_collection.create_index([("user_id", 1), ("created_at", -1)])
         await messages_collection.create_index(
             [("sender", "text"), ("content", "text"), ("ai_analysis.summary", "text")],
