@@ -2,37 +2,40 @@ import Link from "next/link";
 import {
   ArrowRight,
   BrainCircuit,
+  FileText,
   Focus,
   Inbox,
+  Layers,
   ListChecks,
-  MessageSquareText,
   Plug,
   Sparkles,
 } from "lucide-react";
-import ThemeToggle from "@/components/ThemeToggle";
+import PublicFooter from "@/components/marketing/PublicFooter";
+import PublicHeader from "@/components/marketing/PublicHeader";
 import { Button } from "@/components/ui/button";
 import { BRAND_NAME } from "@/lib/brand";
+import { PUBLIC_LINKS } from "@/lib/site";
 
 const features = [
   {
     icon: BrainCircuit,
-    title: "Smart Priority Detection",
-    body: "AI reads every message and flags what actually needs you now. Urgent goes first, noise stays quiet.",
+    title: "Intelligent Message Prioritization",
+    body: "AI scores every message — urgent, important, normal, or low — so the messages that actually need you rise to the top.",
+  },
+  {
+    icon: FileText,
+    title: "AI-Powered Summaries",
+    body: "Long threads become short summaries with the key point and a recommended action, so you can catch up in seconds.",
   },
   {
     icon: ListChecks,
     title: "Automatic Task Extraction",
-    body: "Deadlines and to-dos are pulled straight from conversations into a task list you can tick off.",
+    body: "Deadlines, to-dos, and follow-ups are pulled from conversations into a task list you can act on.",
   },
   {
-    icon: MessageSquareText,
-    title: "AI Reply Suggestions",
-    body: "Context-aware replies are drafted for you, so responding takes seconds instead of minutes.",
-  },
-  {
-    icon: Inbox,
-    title: "Unified Inbox",
-    body: "WhatsApp and Gmail land in one calm inbox — automatically threaded, prioritized, and summarized.",
+    icon: Layers,
+    title: "Communication Overload Management",
+    body: "Gmail and WhatsApp flow into one calm inbox with an attention view, analytics, and an assistant that answers questions.",
   },
 ];
 
@@ -40,7 +43,7 @@ const steps = [
   {
     icon: Plug,
     title: "Connect your channels",
-    body: "Link WhatsApp and Gmail in two clicks with secure, encrypted OAuth.",
+    body: "Connect Gmail with read-only Google OAuth, or ingest WhatsApp messages through the webhook.",
   },
   {
     icon: Sparkles,
@@ -50,13 +53,15 @@ const steps = [
   {
     icon: Focus,
     title: "Focus on what matters",
-    body: "Check the Attention tab, complete extracted tasks, and reply in seconds.",
+    body: "Check the Attention tab, complete extracted tasks, and act on the messages that matter.",
   },
 ];
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <PublicHeader />
+
       {/* ===== Hero backdrop ===== */}
       <div className="relative overflow-hidden">
         <div aria-hidden className="pointer-events-none absolute inset-0">
@@ -66,36 +71,8 @@ export default function Home() {
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,_oklch(0.98_0.02_250/0.5),transparent)]" />
         </div>
 
-        {/* ===== Nav ===== */}
-        <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-linear-to-br from-signal to-violet-400 text-primary-foreground shadow-sm">
-              <Inbox size={15} strokeWidth={2} />
-            </span>
-            <span className="text-[15px] font-semibold tracking-tight">
-              {BRAND_NAME}
-            </span>
-          </Link>
-          <div className="flex items-center gap-2">
-            <ThemeToggle className="hidden md:inline-flex" />
-            <Button
-              variant="ghost"
-              size="sm"
-              render={<Link href="/login" />}
-            >
-              Sign in
-            </Button>
-            <Button
-              size="sm"
-              render={<Link href="/signup" />}
-            >
-              Get Started
-            </Button>
-          </div>
-        </header>
-
         {/* ===== Hero ===== */}
-        <section className="relative z-10 mx-auto max-w-3xl px-4 pt-6 pb-24 text-center sm:pt-10">
+        <section className="relative z-10 mx-auto max-w-3xl px-4 pt-14 pb-24 text-center sm:pt-20">
           <div className="relative">
             <div
               aria-hidden
@@ -120,15 +97,15 @@ export default function Home() {
                 </h1>
 
                 <p className="mx-auto mt-5 max-w-xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg">
-                  An intelligent AI inbox that prioritizes messages, extracts
-                  tasks, and suggests smart replies so you never miss what
+                  An intelligent AI inbox that prioritizes messages,
+                  summarizes threads, and extracts tasks so you never miss what
                   counts.
                 </p>
 
                 <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
                   <Button
                     className="h-11 w-full rounded-full bg-foreground px-7 text-[15px] text-background hover:bg-foreground/90 sm:w-auto"
-                    render={<Link href="/signup" />}
+                    render={<Link href={PUBLIC_LINKS.signup} />}
                   >
                     Get Started
                     <ArrowRight className="ml-1" />
@@ -136,9 +113,9 @@ export default function Home() {
                   <Button
                     variant="outline"
                     className="h-11 w-full rounded-full px-7 text-[15px] sm:w-auto"
-                    render={<Link href="/dashboard" />}
+                    render={<Link href={PUBLIC_LINKS.howItWorks} />}
                   >
-                    View Demo
+                    See how it works
                   </Button>
                 </div>
               </div>
@@ -148,7 +125,7 @@ export default function Home() {
       </div>
 
       {/* ===== Features ===== */}
-      <section className="mx-auto max-w-6xl px-6 pb-24">
+      <section id="features" className="mx-auto max-w-6xl scroll-mt-24 px-6 pb-24">
         <div className="mx-auto max-w-2xl text-center">
           <p className="triage-label text-muted-foreground">Features</p>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
@@ -180,7 +157,10 @@ export default function Home() {
       </section>
 
       {/* ===== How it works ===== */}
-      <section className="border-y border-border bg-muted/60 py-20">
+      <section
+        id="how-it-works"
+        className="scroll-mt-24 border-y border-border bg-muted/60 py-20"
+      >
         <div className="mx-auto max-w-6xl px-6">
           <div className="mx-auto max-w-2xl text-center">
             <p className="triage-label text-muted-foreground">How it works</p>
@@ -218,7 +198,7 @@ export default function Home() {
           <div className="mt-14 text-center">
             <Button
               className="h-11 rounded-full bg-foreground px-7 text-[15px] text-background hover:bg-foreground/90"
-              render={<Link href="/signup" />}
+              render={<Link href={PUBLIC_LINKS.signup} />}
             >
               Get Started
               <ArrowRight className="ml-1" />
@@ -227,25 +207,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ===== Footer ===== */}
-      <footer className="bg-background">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-10 sm:flex-row">
-          <div className="flex items-center gap-2.5">
-            <span className="flex size-7 items-center justify-center rounded-lg bg-linear-to-br from-signal to-violet-400 text-primary-foreground">
-              <Inbox size={14} strokeWidth={2} />
-            </span>
-            <span className="text-sm font-semibold tracking-tight">
-              {BRAND_NAME}
-            </span>
-          </div>
-          <p className="text-center text-xs text-muted-foreground">
-            AI-powered communication overload management.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Built as Final Year Project – BBSUL
-          </p>
-        </div>
-      </footer>
+      <PublicFooter />
     </div>
   );
 }

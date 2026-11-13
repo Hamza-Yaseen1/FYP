@@ -34,7 +34,6 @@ export default function LoginPage() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [serverError, setServerError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [showForgotHint, setShowForgotHint] = useState(false);
 
   const setField = (field: keyof FormState) => (value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -123,20 +122,13 @@ export default function LoginPage() {
             />
             Remember me
           </label>
-          <button
-            type="button"
-            onClick={() => setShowForgotHint((v) => !v)}
+          <Link
+            href="/forgot-password"
             className="text-sm font-medium text-primary underline-offset-4 hover:underline"
           >
             Forgot password?
-          </button>
+          </Link>
         </div>
-        {showForgotHint && (
-          <p className="rounded-lg border border-border bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
-            Password reset is not available yet. Contact your project admin to
-            reset it manually.
-          </p>
-        )}
 
         <Button type="submit" className="w-full" disabled={submitting}>
           {submitting ? "Signing in..." : "Sign in"}
