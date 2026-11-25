@@ -273,6 +273,11 @@ class TestProtectedSurface:
         res = client.get("/health")
         assert res.status_code == 200
 
+    def test_google_site_verification_file_is_public(self, client):
+        res = client.get("/google98ff4b3f9af3bc6c.html")
+        assert res.status_code == 200
+        assert res.text.strip() == "google-site-verification: google98ff4b3f9af3bc6c.html"
+
     def test_logout_ends_session_in_browser(self, client):
         client.post(
             "/auth/register",

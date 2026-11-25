@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from dotenv import load_dotenv
 import logging
 
@@ -179,6 +179,13 @@ def read_root():
   </body>
 </html>
 """
+
+
+@app.get("/google98ff4b3f9af3bc6c.html", include_in_schema=False)
+def google_site_verification():
+    verification_file = os.path.join(os.path.dirname(__file__), "google98ff4b3f9af3bc6c.html")
+    return FileResponse(verification_file, media_type="text/html")
+
 
 @app.get("/health")
 def health_check():
