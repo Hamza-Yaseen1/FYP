@@ -1,8 +1,7 @@
-import { Inbox } from "lucide-react";
+import Image from "next/image";
 import AuroraBackdrop from "@/components/AuroraBackdrop";
 import { GlassCard } from "@/components/GlassCard";
 import ThemeToggle from "@/components/ThemeToggle";
-import { BRAND_NAME } from "@/lib/brand";
 
 export default function AuthLayout({
   children,
@@ -23,13 +22,15 @@ export default function AuthLayout({
           <GlassCard className="p-6 sm:p-8">
             {/* Brand */}
             <div className="mb-7 flex flex-col items-center gap-3">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-linear-to-br from-signal to-violet-400 text-primary-foreground shadow-lg shadow-signal/25">
-                <Inbox size={22} strokeWidth={2} />
-              </div>
+              <Image
+                src="/sift-logo.png"
+                alt="Sift"
+                width={2172}
+                height={724}
+                className="h-12 w-auto"
+                priority
+              />
               <div className="text-center">
-                <h1 className="text-xl font-semibold tracking-tight">
-                  {BRAND_NAME}
-                </h1>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Communication triage, sorted by AI
                 </p>

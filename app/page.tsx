@@ -1,10 +1,10 @@
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowRight,
   BrainCircuit,
   FileText,
   Focus,
-  Inbox,
   Layers,
   ListChecks,
   Plug,
@@ -81,12 +81,14 @@ export default function Home() {
             <div className="rounded-[2rem] bg-linear-to-br from-sky-200 via-pink-200 to-amber-100 p-px bg-[length:220%_220%] animate-pan dark:from-sky-400/30 dark:via-pink-400/25 dark:to-amber-300/25">
               <div className="rounded-[calc(2rem-1px)] bg-white/80 px-6 py-14 backdrop-blur-xl sm:px-12 dark:bg-surface/70">
                 <div className="mb-5 flex items-center justify-center gap-2.5">
-                  <span className="flex size-9 items-center justify-center rounded-xl bg-linear-to-br from-signal to-violet-400 text-primary-foreground shadow-md shadow-signal/25">
-                    <Inbox size={18} strokeWidth={2} />
-                  </span>
-                  <span className="text-sm font-semibold tracking-tight">
-                    {BRAND_NAME}
-                  </span>
+                  <Image
+                    src="/sift-logo.png"
+                    alt={BRAND_NAME}
+                    width={2172}
+                    height={724}
+                    className="h-9 w-auto"
+                    priority
+                  />
                 </div>
 
                 <h1 className="text-balance text-4xl leading-[1.1] font-semibold tracking-tight sm:text-5xl">

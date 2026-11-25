@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Inbox } from "lucide-react";
+import Image from "next/image";
 import ThemeToggle from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { BRAND_NAME } from "@/lib/brand";
@@ -14,12 +14,14 @@ export default function PublicHeader() {
           className="flex items-center gap-2.5 rounded-lg focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
           aria-label={`${BRAND_NAME} home`}
         >
-          <span className="flex size-8 items-center justify-center rounded-lg bg-linear-to-br from-signal to-violet-400 text-primary-foreground shadow-sm">
-            <Inbox size={15} strokeWidth={2} aria-hidden />
-          </span>
-          <span className="text-[15px] font-semibold tracking-tight">
-            {BRAND_NAME}
-          </span>
+          <Image
+            src="/sift-logo.png"
+            alt=""
+            width={2172}
+            height={724}
+            className="h-8 w-auto"
+            priority
+          />
         </Link>
 
         <nav

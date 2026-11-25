@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Inbox, Mail } from "lucide-react";
+import Image from "next/image";
+import { Mail } from "lucide-react";
 import { BRAND_NAME } from "@/lib/brand";
 import { CONTACT_EMAIL, LEGAL_LAST_UPDATED, PUBLIC_LINKS } from "@/lib/site";
 
@@ -21,12 +22,13 @@ export default function PublicFooter() {
       <div className="mx-auto grid max-w-6xl gap-10 px-6 py-12 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <Link href={PUBLIC_LINKS.home} className="flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-linear-to-br from-signal to-violet-400 text-primary-foreground shadow-sm">
-              <Inbox size={15} strokeWidth={2} aria-hidden />
-            </span>
-            <span className="text-[15px] font-semibold tracking-tight">
-              {BRAND_NAME}
-            </span>
+            <Image
+              src="/sift-logo.png"
+              alt={BRAND_NAME}
+              width={2172}
+              height={724}
+              className="h-8 w-auto"
+            />
           </Link>
           <p className="mt-3 max-w-xs text-sm leading-relaxed text-muted-foreground">
             AI-powered communication overload management. Read everything,
