@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
 from dotenv import load_dotenv
 import logging
 
@@ -164,9 +165,27 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 def read_root():
-    return {"message":"Backend is running "}
+    return """<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="google-site-verification" content="W8rq2ypu8UtZFI2xGUX0drcOIAbqP6L_NMglP6g0Nr4">
+    <title>Communication AI Backend</title>
+  </head>
+  <body>
+    <h1>Communication AI Backend</h1>
+  </body>
+</html>
+"""
+
+
+@app.get("/google98ff4b3f9af3bc6c.html", include_in_schema=False)
+def google_site_verification():
+    verification_file = os.path.join(os.path.dirname(__file__), "google98ff4b3f9af3bc6c.html")
+    return FileResponse(verification_file, media_type="text/html")
+
 
 @app.get("/health")
 def health_check():
