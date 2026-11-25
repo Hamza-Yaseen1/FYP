@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import Image from "next/image";
 import {
   LayoutDashboard,
   Inbox,
@@ -36,17 +37,14 @@ export default function Sidebar({ className, onNavigate }: SidebarProps) {
     <div className={cn("flex h-full flex-col", className)}>
 {/* Brand */}
       <div className="flex items-center gap-3 px-5 pt-6 pb-5">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-signal to-violet-400 text-sm font-semibold text-primary-foreground shadow-md shadow-signal/25">
-          S
-        </span>
-        <div className="leading-tight">
-          <span className="block text-[15px] font-semibold tracking-tight">
-            {BRAND_NAME}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            Communication overload, managed
-          </span>
-        </div>
+        <Image
+          src="/sift-logo.png"
+          alt={BRAND_NAME}
+          width={2172}
+          height={724}
+          className="h-10 w-auto"
+          priority
+        />
       </div>
 
       {/* Navigation */}
